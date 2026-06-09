@@ -6,64 +6,44 @@ export default function useDevToolsDetection() {
   useEffect(() => {
     if (process.env.NODE_ENV === "development") return;
 
+    const reload = () => window.location.reload();
     const threshold = 160;
 
-    const emitEvent = () => {
-      window.location.reload();
-    };
-
-    // 1. Detect Resize (Commonly triggered by opening DevTools if docked)
     const handleResize = () => {
-      const widthDiff = window.outerWidth - window.innerWidth > threshold;
-      const heightDiff = window.outerHeight - window.innerHeight > threshold;
-      
-      if (widthDiff || heightDiff) {
-        emitEvent();
-      }
+      if (
+        window.outerWidth - window.innerWidth > threshold ||
+        window.outerHeight - window.innerHeight > threshold
+      ) reload();
     };
 
-    // 2. Detect Shortcuts
     const handleKeyDown = (e: KeyboardEvent) => {
+      const k = e.key?.toLowerCase();
       // F12
-      if (e.key === "F12") {
-        emitEvent();
-      }
-      // Ctrl+Shift+I / Ctrl+Shift+J / Ctrl+U (View Source)
-      if (e.ctrlKey && e.shiftKey && (e.key === "I" || e.key === "J" || e.key === "C")) {
-        emitEvent();
-      }
-      if (e.ctrlKey && e.key === "u") {
-        emitEvent();
-      }
+      if (e.key === "F12") { e.preventDefault(); reload(); return; }
+      // Ctrl+Shift+I/J/C
+      if (e.ctrlKey && e.shiftKey && ["i","j","c"].includes(k)) { e.preventDefault(); reload(); return; }
+      // Ctrl+U (view source)
+      if (e.ctrlKey && k === "u") { e.preventDefault(); reload(); return; }
+      // Cmd+Option+I/J (macOS)
+      if (e.metaKey && e.altKey && ["i","j"].includes(k)) { e.preventDefault(); reload(); return; }
     };
 
-    // 3. Constant Check for Console/DevTools
-    // Some advanced detection methods like using 'debugger' or console timing
-    const devtools = /./;
-    devtools.toString = function() {
-      emitEvent();
-      return "";
+    // Debugger timing attack — DevTools pauses JS execution
+    const checkDebugger = () => {
+      const t = performance.now();
+      // eslint-disable-next-line no-debugger
+      debugger;
+      if (performance.now() - t > 100) reload();
     };
 
-    window.addEventListener("resize", handleResize);
-    window.addEventListener("keydown", handleKeyDown);
-
-    // Subtle check using console.log with an object and a getter
-    const check = () => {
-        const start = new Date().getTime();
-        // eslint-disable-next-line no-debugger
-        debugger;
-        const end = new Date().getTime();
-        if (end - start > 100) {
-            emitEvent();
-        }
-    };
-
-    const interval = setInterval(check, 1000);
+    window.addEventListener("resize", handleResize, true);
+    window.addEventListener("keydown", handleKeyDown, true);
+    handleResize();
+    const interval = setInterval(checkDebugger, 1500);
 
     return () => {
-      window.removeEventListener("resize", handleResize);
-      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("resize", handleResize, true);
+      window.removeEventListener("keydown", handleKeyDown, true);
       clearInterval(interval);
     };
   }, []);
