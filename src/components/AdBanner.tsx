@@ -1,31 +1,64 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 
-export default function AdBanner() {
+type AdBannerVariant = "leaderboard" | "sidebar" | "banner";
+
+interface AdBannerProps {
+  variant?: AdBannerVariant;
+  className?: string;
+}
+
+const AD_PLACEHOLDER_COPY = [
+  { headline: "Upgrade to Premium", sub: "Watch new episodes 48h early. Ad-free. 4K HDR.", cta: "Try Free →", color: "from-blue-600 to-purple-600" },
+  { headline: "Anime Merch Store", sub: "Official posters, figures, and apparel. Limited edition drops.", cta: "Shop Now →", color: "from-pink-600 to-orange-500" },
+  { headline: "Join our Discord", sub: "10,000+ anime fans. Discuss, share, and discover.", cta: "Join Free →", color: "from-indigo-600 to-blue-500" },
+];
+
+const dims: Record<AdBannerVariant, { w: string; h: string; label: string }> = {
+  leaderboard: { w: "w-full", h: "h-[90px]",  label: "728×90 Leaderboard" },
+  sidebar:     { w: "w-full", h: "h-[250px]", label: "300×250 Medium Rectangle" },
+  banner:      { w: "w-full", h: "h-[60px]",  label: "468×60 Banner" },
+};
+
+export default function AdBanner({ variant = "leaderboard", className = "" }: AdBannerProps) {
+  const [dismissed, setDismissed] = useState(false);
+  const ad = AD_PLACEHOLDER_COPY[Math.floor(Math.random() * AD_PLACEHOLDER_COPY.length)];
+  const { w, h, label } = dims[variant];
+
+  if (dismissed) return null;
+
   return (
-    <div className="w-full flex justify-center py-8">
-      <div className="w-full max-w-5xl h-40 bg-zinc-900/50 border border-zinc-800 rounded-3xl flex items-center justify-center relative overflow-hidden group cursor-pointer hover:border-zinc-700 transition-colors">
-        {/* Ad Background Decor */}
-        <div className="absolute top-0 right-0 w-[300px] h-full bg-blue-600/5 skew-x-[-20deg] group-hover:bg-blue-600/10 transition-colors"></div>
-        
-        <div className="relative z-10 flex flex-col md:flex-row items-center gap-6 px-12 text-center md:text-left">
-          <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center flex-shrink-0 shadow-lg shadow-blue-600/20">
-            <span className="text-white font-black text-2xl">A</span>
+    <div className={`${w} ${h} ${className} relative overflow-hidden rounded-xl border border-zinc-800 flex items-center`}>
+      {/* Ad content */}
+      <div className={`absolute inset-0 bg-gradient-to-r ${ad.color} opacity-10`} />
+      <div className="relative flex items-center justify-between w-full px-5 gap-4">
+        <div className="flex items-center gap-4 min-w-0">
+          <span className="text-[9px] font-black text-zinc-600 uppercase tracking-widest shrink-0 border border-zinc-700 px-1.5 py-0.5 rounded">Ad</span>
+          <div className="min-w-0">
+            <p className="text-sm font-black text-white truncate">{ad.headline}</p>
+            {variant !== "banner" && (
+              <p className="text-xs text-zinc-500 truncate">{ad.sub}</p>
+            )}
           </div>
-          <div>
-            <h4 className="text-xl font-black text-white">Upgrade to Premium</h4>
-            <p className="text-zinc-500 font-medium text-sm">Remove all ads from the platform and watch everything in 4K.</p>
-          </div>
-          <button className="md:ml-auto px-8 py-3 bg-white text-black font-black rounded-xl hover:bg-zinc-200 transition-all transform active:scale-95">
-            Get 2 Months Free
+        </div>
+        <div className="flex items-center gap-3 shrink-0">
+          <a href="#" className={`text-xs font-black px-4 py-2 rounded-lg bg-gradient-to-r ${ad.color} text-white whitespace-nowrap hover:opacity-90 transition-opacity`}>
+            {ad.cta}
+          </a>
+          <button
+            onClick={() => setDismissed(true)}
+            className="text-zinc-700 hover:text-zinc-400 transition-colors text-lg leading-none"
+            title="Close ad"
+          >
+            ×
           </button>
         </div>
-
-        <div className="absolute top-4 left-4 flex items-center gap-2">
-            <div className="px-2 py-0.5 bg-zinc-800 rounded text-[8px] font-black text-zinc-500 uppercase tracking-widest">Sponsored</div>
-        </div>
       </div>
+      {/* Size label (dev mode) */}
+      {process.env.NODE_ENV === "development" && (
+        <span className="absolute bottom-1 right-2 text-[8px] text-zinc-700 font-mono">{label}</span>
+      )}
     </div>
   );
 }
