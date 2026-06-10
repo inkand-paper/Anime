@@ -20,21 +20,23 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   const isPremium = plan === "PREMIUM";
-  const openModal = () => setIsModalOpen(true);
-  const closeModal = () => setIsModalOpen(false);
 
   return (
-    <SubscriptionContext.Provider value={{ plan, setPlan, isPremium, isModalOpen, openModal, closeModal }}>
+    <SubscriptionContext.Provider value={{
+      plan,
+      setPlan,
+      isPremium,
+      isModalOpen,
+      openModal: () => setIsModalOpen(true),
+      closeModal: () => setIsModalOpen(false),
+    }}>
       {children}
     </SubscriptionContext.Provider>
   );
 }
 
-
 export function useSubscription() {
   const context = useContext(SubscriptionContext);
-  if (context === undefined) {
-    throw new Error("useSubscription must be used within a SubscriptionProvider");
-  }
+  if (!context) throw new Error("useSubscription must be used within SubscriptionProvider");
   return context;
 }
