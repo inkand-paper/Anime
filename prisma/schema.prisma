@@ -97,3 +97,21 @@ model WatchlistItem {
 
   @@unique([userId, animeId])
 }
+
+// ─── Host Mapping ─────────────────────────────────────────────────────────────
+// Stores embed URLs for dubbed episodes across the 7 fallback hosts.
+// Populated by the upload coordinator script via registerHostMapping().
+
+model HostMapping {
+  id        String   @id @default(cuid())
+  animeId   String   // Gogoanime slug, e.g. "one-piece"
+  episode   Int
+  host      String   // One of: Doodstream | VOE | Filemoon | Streamwish | Streamtape | MixDrop | Megastream
+  embedUrl  String   // Full embed URL for this host
+  dubbed    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([animeId, episode, host])
+  @@index([animeId, episode])
+}
