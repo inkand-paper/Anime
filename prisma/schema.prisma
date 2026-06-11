@@ -1,55 +1,68 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
 }
 
-datasource dev_db {
-  provider = "sqlite"
-  url      = "file:./dev.db"
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
-
+// ---------------------------------------------------------------------------
+// User & Auth
+// ---------------------------------------------------------------------------
 
 model User {
   id            String    @id @default(cuid())
   name          String?
-  email         String?   @unique
-  password      String?
+  email         String    @unique
   emailVerified DateTime?
+  password      String?
   image         String?
-  role          String    @default("USER") // USER, PREMIUM, ADMIN
-  referralCode  String?   @unique
-  referredBy    String?
-  
+  role          Role      @default(USER)
+  referralCode  String    @unique @default(cuid())
+  referredById  String?
+
+  referredBy    User?     @relation("Referrals", fields: [referredById], references: [id])
+  referrals     User[]    @relation("Referrals")
+
   accounts      Account[]
   sessions      Session[]
-  profile       Profile?
   subscription  Subscription?
   watchlist     WatchlistItem[]
-  
+  watchRooms    WatchRoomMember[]
+  hostedRooms   WatchRoom[]
+
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
+
+  @@index([email])
+  @@index([referralCode])
+}
+
+enum Role {
+  USER
+  PREMIUM
+  ADMIN
 }
 
 model Account {
-  id                 String  @id @default(cuid())
-  userId             String
-  type               String
-  provider           String
-  providerAccountId  String
-  refresh_token      String?
-  access_token       String?
-  expires_at         Int?
-  token_type         String?
-  scope              String?
-  id_token           String?
-  session_state      String?
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerAccountId])
+  @@index([userId])
 }
 
 model Session {
@@ -58,6 +71,8 @@ model Session {
   userId       String
   expires      DateTime
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model VerificationToken {
@@ -68,50 +83,130 @@ model VerificationToken {
   @@unique([identifier, token])
 }
 
-model Profile {
-  id        String  @id @default(cuid())
-  userId    String  @unique
-  bio       String?
-  avatarUrl String?
-  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-}
+// ---------------------------------------------------------------------------
+// Subscription & Billing
+// ---------------------------------------------------------------------------
 
 model Subscription {
-  id        String   @id @default(cuid())
-  userId    String   @unique
-  status    String   @default("INACTIVE") // INACTIVE, ACTIVE, EXPIRED
-  plan      String   @default("FREE")     // FREE, PREMIUM
-  startDate DateTime @default(now())
-  endDate   DateTime?
-  
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id          String             @id @default(cuid())
+  userId      String             @unique
+  plan        Plan               @default(FREE)
+  status      SubscriptionStatus @default(INACTIVE)
+  externalId  String?            // PayPal / Stripe subscription ID
+  startDate   DateTime           @default(now())
+  endDate     DateTime?
+  cancelledAt DateTime?
+
+  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([externalId])
+  @@index([status])
 }
+
+enum Plan {
+  FREE
+  MONTHLY
+  YEARLY
+}
+
+enum SubscriptionStatus {
+  INACTIVE
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+  EXPIRED
+}
+
+// ---------------------------------------------------------------------------
+// Watchlist
+// ---------------------------------------------------------------------------
 
 model WatchlistItem {
-  id        String   @id @default(cuid())
-  userId    String
-  animeId   String
-  addedAt   DateTime @default(now())
-  
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id      String   @id @default(cuid())
+  userId  String
+  animeId String
+  addedAt DateTime @default(now())
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, animeId])
+  @@index([userId])
 }
 
-// ─── Host Mapping ─────────────────────────────────────────────────────────────
-// Stores embed URLs for dubbed episodes across the 7 fallback hosts.
-// Populated by the upload coordinator script via registerHostMapping().
+// ---------------------------------------------------------------------------
+// Watch Together Rooms
+// ---------------------------------------------------------------------------
+
+model WatchRoom {
+  id          String            @id @default(cuid())
+  inviteCode  String            @unique
+  animeId     String
+  episode     Int               @default(1)
+  currentTime Float             @default(0)
+  isPlaying   Boolean           @default(false)
+  hostId      String
+  expiresAt   DateTime
+  createdAt   DateTime          @default(now())
+
+  host        User              @relation(fields: [hostId], references: [id], onDelete: Cascade)
+  members     WatchRoomMember[]
+
+  @@index([inviteCode])
+  @@index([expiresAt])
+}
+
+model WatchRoomMember {
+  id       String    @id @default(cuid())
+  roomId   String
+  userId   String
+  joinedAt DateTime  @default(now())
+
+  room     WatchRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, userId])
+  @@index([roomId])
+}
+
+// ---------------------------------------------------------------------------
+// Host Mapping (dubbed video storage across 7 providers)
+// ---------------------------------------------------------------------------
 
 model HostMapping {
-  id        String   @id @default(cuid())
-  animeId   String   // Gogoanime slug, e.g. "one-piece"
+  id        String      @id @default(cuid())
+  animeId   String
   episode   Int
-  host      String   // One of: Doodstream | VOE | Filemoon | Streamwish | Streamtape | MixDrop | Megastream
-  embedUrl  String   // Full embed URL for this host
-  dubbed    Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  host      DubbedHost
+  embedUrl  String
+  dubbed    Boolean     @default(true)
+  verified  Boolean     @default(false)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
 
   @@unique([animeId, episode, host])
   @@index([animeId, episode])
+}
+
+enum DubbedHost {
+  DOODSTREAM
+  VOE
+  FILEMOON
+  STREAMWISH
+  STREAMTAPE
+  MIXDROP
+  MEGASTREAM
+}
+
+// ---------------------------------------------------------------------------
+// Audit / Rate Limiting
+// ---------------------------------------------------------------------------
+
+model RateLimit {
+  id        String   @id @default(cuid())
+  key       String   @unique  // e.g. "ip:1.2.3.4:login"
+  count     Int      @default(1)
+  resetAt   DateTime
+
+  @@index([key])
+  @@index([resetAt])
 }
