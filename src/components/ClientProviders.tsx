@@ -9,13 +9,13 @@ import PremiumModal from "./PremiumModal";
 
 
 export default function ClientProviders({ children }: { children: React.ReactNode }) {
-  useDevToolsDetection();
   return (
     <SessionProvider>
       <LanguageProvider>
         <WatchlistProvider>
           <SubscriptionProvider>
             <GlobalModalHandler>
+              <DevToolsWatcher />
               {children}
             </GlobalModalHandler>
           </SubscriptionProvider>
@@ -23,6 +23,11 @@ export default function ClientProviders({ children }: { children: React.ReactNod
       </LanguageProvider>
     </SessionProvider>
   );
+}
+
+function DevToolsWatcher() {
+  useDevToolsDetection();
+  return null;
 }
 
 function GlobalModalHandler({ children }: { children: React.ReactNode }) {
