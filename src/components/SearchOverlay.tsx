@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { useLanguage } from "@/context/LanguageContext";
 import { Anime } from "@/data/anime";
 import Link from "next/link";
-import { Loader2, Search as SearchIcon, X, ChevronRight } from "lucide-react";
+import { Loader2, Search, X, ChevronRight } from "lucide-react";
 
 interface SearchOverlayProps { isOpen: boolean; onClose: () => void; }
 
@@ -84,7 +84,7 @@ export default function SearchOverlay({ isOpen, onClose }: SearchOverlayProps) {
 
         {/* Search input */}
         <div className="flex items-center gap-4 border-b-2 border-zinc-800 pb-4">
-          <SearchIcon className="w-7 h-7 text-zinc-500 flex-shrink-0" />
+          <Search className="w-7 h-7 text-zinc-500 flex-shrink-0" />
           <input
             ref={inputRef}
             type="text"

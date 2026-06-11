@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Github, Twitter, MessageCircle, Send } from "lucide-react";
+import { Globe, Share2, MessageCircle, Send } from "lucide-react";
 
 const NAV = [
   { label: "Home",      href: "/" },
@@ -15,8 +15,8 @@ const LEGAL = [
 ];
 
 const SOCIAL = [
-  { label: "GitHub",   href: "https://github.com", Icon: Github },
-  { label: "Twitter",  href: "https://twitter.com", Icon: Twitter },
+  { label: "GitHub",   href: "https://github.com", Icon: Globe },
+  { label: "Twitter",  href: "https://twitter.com", Icon: Share2 },
   { label: "Discord",  href: "https://discord.com", Icon: MessageCircle },
   { label: "Telegram", href: "https://t.me",        Icon: Send },
 ];
