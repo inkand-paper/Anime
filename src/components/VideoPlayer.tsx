@@ -42,7 +42,7 @@ export default function VideoPlayer({ sources, title, episode, onAdComplete, onN
   const [buffering, setBuffering] = useState(false);
 
   // Pre-roll ad state
-  const [adPlaying, setAdPlaying] = useState(true);
+  const [adPlaying, setAdPlaying] = useState(false);
   const [adTimer, setAdTimer] = useState(10);
   const [adSkippable, setAdSkippable] = useState(false);
 

@@ -18,6 +18,8 @@ export default async function proxy(req: NextRequest) {
     img-src 'self' blob: data: https:;
     font-src 'self';
     connect-src 'self' https:;
+    frame-src 'self' https:;
+    media-src 'self' blob: data: https:;
     object-src 'none';
     base-uri 'self';
     form-action 'self';

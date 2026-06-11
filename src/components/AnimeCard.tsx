@@ -1,129 +1,167 @@
 "use client";
 
 import React, { useState } from "react";
+import Link from "next/link";
+import { Play, Plus, Check, Lock, Star } from "lucide-react";
 import { useLanguage } from "@/context/LanguageContext";
 import { useWatchlist } from "@/context/WatchlistContext";
 import { useSubscription } from "@/context/SubscriptionContext";
 import { Anime } from "@/data/anime";
-import Link from "next/link";
-import { Lock, Star, Play, Check, Plus } from "lucide-react";
+import { cn } from "@/lib/cn";
 
-interface AnimeCardProps { anime: Anime; }
+interface AnimeCardProps {
+  anime: Anime;
+  fixed?: boolean;
+}
 
-export default function AnimeCard({ anime }: AnimeCardProps) {
+export default function AnimeCard({ anime, fixed = true }: AnimeCardProps) {
   const { language } = useLanguage();
   const { addToWatchlist, removeFromWatchlist, isInWatchlist } = useWatchlist();
   const { isPremium, openModal } = useSubscription();
-  const [isHovered, setIsHovered] = useState(false);
+  const [hovered, setHovered] = useState(false);
 
-  const isAdded = isInWatchlist(anime.id);
-  // Temporarily disabled for testing
-  const isLocked = false; 
-  // const isLocked = anime.tags.includes("New Release") && !isPremium;
+  const isAdded  = isInWatchlist(anime.id);
+  const isLocked = anime.tags.includes("New Release") && !isPremium;
+  const title    = anime.title[language];
 
-  const handleCardClick = () => { if (isLocked) openModal(); };
+  const handleWatchlistToggle = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    isAdded ? removeFromWatchlist(anime.id) : addToWatchlist(anime);
+  };
+
+  const handleClick = (e: React.MouseEvent) => {
+    if (isLocked) { e.preventDefault(); openModal(); }
+  };
 
   return (
     <div
-      className="relative flex-none w-44 md:w-52"
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
+      className={cn("relative shrink-0 group", fixed && "w-44 md:w-48")}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
       style={{
-        zIndex: isHovered ? 50 : 10,
-        transform: isHovered ? "scale(1.18) translateY(-8px)" : "scale(1)",
-        transition: "transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), z-index 0s",
+        zIndex: hovered ? 40 : "auto",
+        transform: hovered ? "scale(1.1) translateY(-8px)" : "scale(1)",
+        transition: "transform 0.3s cubic-bezier(0.34,1.56,0.64,1)",
       }}
-      onClick={isLocked ? handleCardClick : undefined}
     >
-      <div className={`relative rounded-3xl overflow-hidden bg-zinc-950 border-2 transition-all duration-500 shadow-2xl cursor-pointer
-        ${isHovered ? "border-blue-500/50 shadow-blue-500/10" : "border-white/5"}
-        ${isLocked ? "cursor-pointer" : ""}`}
-        style={{ aspectRatio: "2/3" }}
-      >
-        {/* Cover image */}
-        <img
-          src={anime.image}
-          alt={anime.title[language]}
-          className="w-full h-full object-cover transition-all duration-700"
-          style={{ filter: isLocked ? "brightness(0.2) blur(2px)" : isHovered ? "brightness(0.35) scale(1.05)" : "brightness(1)" }}
-        />
-
-        {/* Lock overlay */}
-        {isLocked && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center p-4 text-center">
-            <div className="w-14 h-14 bg-white/5 backdrop-blur-xl rounded-full flex items-center justify-center border border-white/10 mb-4 shadow-2xl">
-              <Lock className="w-6 h-6 text-white" strokeWidth={2.5} />
-            </div>
-            <p className="text-white font-black text-xs uppercase tracking-[0.2em] drop-shadow-lg">Premium</p>
-            <p className="text-zinc-500 text-[9px] font-black mt-2 uppercase tracking-widest bg-white/5 px-2 py-1 rounded-md">Unlock Access</p>
-          </div>
-        )}
-
-        {/* Rating badge */}
-        {!isLocked && (
-          <div className="absolute top-3 right-3 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/60 backdrop-blur-md border border-white/5">
-            <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />
-            <span className="text-white text-[11px] font-black">{anime.rating}</span>
-          </div>
-        )}
-
-        {/* New badge */}
-        {anime.tags.includes("New Release") && (
-          <div className="absolute top-3 left-3">
-            <span className="text-[10px] font-black px-2.5 py-1 rounded-full bg-blue-600 text-white uppercase tracking-wider shadow-lg shadow-blue-600/30">New</span>
-          </div>
-        )}
-
-        {/* Hover info overlay */}
+      <Link href={`/watch/${anime.id}`} onClick={handleClick}>
+        {/* Poster */}
         <div
-          className="absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-zinc-950 via-zinc-950/40 to-transparent transition-opacity duration-300"
-          style={{ opacity: isHovered && !isLocked ? 1 : 0 }}
+          className="relative overflow-hidden rounded-xl"
+          style={{ aspectRatio: "2/3", background: "var(--bg-elevated)" }}
         >
-          <div className="p-5 space-y-3">
-            <h3 className="text-sm font-black text-white line-clamp-2 leading-tight uppercase tracking-tight">
-              {anime.title[language]}
-            </h3>
-            <div className="flex items-center gap-3 text-[10px] font-black text-zinc-400 uppercase tracking-widest">
-              <span className="text-emerald-400 p-1 bg-emerald-500/10 rounded">{anime.rating}</span>
-              <span>•</span>
-              <span className="p-1 bg-white/5 rounded">{anime.year}</span>
-              <span>•</span>
-              <span className="p-1 bg-white/5 rounded">{anime.episodes} EP</span>
-            </div>
-            
-            <div className="flex gap-2.5 pt-2">
-              <Link
-                href={`/watch/${anime.id}`}
-                onClick={(e) => e.stopPropagation()}
-                className="flex-grow py-3 bg-white text-black text-[11px] font-black rounded-xl hover:bg-zinc-200 transition-all flex items-center justify-center gap-2"
+          <img
+            src={anime.image}
+            alt={title}
+            className="w-full h-full object-cover"
+            style={{
+              filter: isLocked ? "brightness(0.25)" : hovered ? "brightness(0.55)" : "brightness(1)",
+              transition: "filter 0.3s ease",
+            }}
+            loading="lazy"
+            decoding="async"
+          />
+
+          {/* Rating badge */}
+          <div
+            className="absolute top-2 right-2 flex items-center gap-1 px-1.5 py-0.5 rounded-md"
+            style={{ background: "rgba(0,0,0,0.72)", backdropFilter: "blur(4px)" }}
+          >
+            <Star size={10} fill="#f59e0b" color="#f59e0b" />
+            <span className="text-[10px] font-bold text-white">{anime.rating}</span>
+          </div>
+
+          {/* New badge */}
+          {anime.tags.includes("New Release") && (
+            <div className="absolute top-2 left-2">
+              <span
+                className="text-[9px] font-black px-1.5 py-0.5 rounded uppercase tracking-wider text-white"
+                style={{ background: "var(--brand-primary)" }}
               >
-                <Play className="w-4 h-4 fill-current" />
-                PLAY
-              </Link>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  isAdded ? removeFromWatchlist(anime.id) : addToWatchlist(anime);
-                }}
-                className={`w-11 h-11 flex items-center justify-center rounded-xl border-2 transition-all
-                  ${isAdded 
-                    ? "bg-blue-600 border-blue-500 text-white" 
-                    : "bg-white/5 border-white/10 text-white hover:bg-white/10"}`}
-                title={isAdded ? "Remove from watchlist" : "Add to watchlist"}
-              >
-                {isAdded ? <Check className="w-5 h-5" /> : <Plus className="w-5 h-5" />}
-              </button>
+                New
+              </span>
             </div>
+          )}
+
+          {/* Lock overlay */}
+          {isLocked && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 p-3 text-center">
+              <div
+                className="w-10 h-10 rounded-full flex items-center justify-center"
+                style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.15)" }}
+              >
+                <Lock size={16} color="white" />
+              </div>
+              <p className="text-white text-[10px] font-bold uppercase tracking-widest">Premium Only</p>
+            </div>
+          )}
+
+          {/* Hover overlay */}
+          <div
+            className="absolute inset-0 flex flex-col items-center justify-center gap-2.5"
+            style={{
+              opacity: hovered && !isLocked ? 1 : 0,
+              transition: "opacity 0.2s ease",
+              background: "linear-gradient(to top, rgba(3,7,18,0.95) 0%, rgba(3,7,18,0.4) 60%, transparent 100%)",
+            }}
+          >
+            <button
+              className="w-12 h-12 rounded-full flex items-center justify-center transition-transform hover:scale-110"
+              style={{
+                background: "linear-gradient(135deg, var(--brand-primary), var(--brand-accent))",
+                boxShadow: "var(--shadow-glow-blue)",
+              }}
+            >
+              <Play size={18} fill="white" color="white" />
+            </button>
+
+            <button
+              onClick={handleWatchlistToggle}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all"
+              style={{
+                background: isAdded ? "rgba(34,197,94,0.2)" : "rgba(255,255,255,0.12)",
+                color: isAdded ? "#22c55e" : "white",
+                border: `1px solid ${isAdded ? "rgba(34,197,94,0.4)" : "rgba(255,255,255,0.2)"}`,
+                backdropFilter: "blur(8px)",
+              }}
+            >
+              {isAdded ? <Check size={11} /> : <Plus size={11} />}
+              {isAdded ? "Saved" : "Watchlist"}
+            </button>
           </div>
         </div>
 
-        {/* Static title — only visible when not hovered */}
-        {!isHovered && !isLocked && (
-          <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black via-black/60 to-transparent">
-            <h3 className="text-[11px] font-black text-white uppercase tracking-tight line-clamp-1 opacity-90">{anime.title[language]}</h3>
+        {/* Info */}
+        <div className="mt-2 px-0.5">
+          <p className="text-sm font-semibold truncate" style={{ color: "var(--text-primary)" }}>
+            {title}
+          </p>
+          <div className="flex items-center gap-1.5 mt-0.5">
+            <span className="text-xs" style={{ color: "var(--text-muted)" }}>{anime.year}</span>
+            <span className="text-xs" style={{ color: "var(--border-strong)" }}>·</span>
+            <span className="text-xs" style={{ color: "var(--text-muted)" }}>{anime.episodes} eps</span>
           </div>
-        )}
-      </div>
+          <div
+            className="flex flex-wrap gap-1 mt-1.5 overflow-hidden"
+            style={{
+              maxHeight: hovered ? "40px" : "0",
+              opacity: hovered ? 1 : 0,
+              transition: "max-height 0.3s ease, opacity 0.2s ease",
+            }}
+          >
+            {anime.tags.slice(0, 2).map((tag) => (
+              <span
+                key={tag}
+                className="text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider"
+                style={{ background: "var(--bg-elevated)", color: "var(--text-muted)" }}
+              >
+                {tag}
+              </span>
+            ))}
+          </div>
+        </div>
+      </Link>
     </div>
   );
 }

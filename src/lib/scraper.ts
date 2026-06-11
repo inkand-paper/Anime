@@ -57,8 +57,8 @@ export async function searchAnimeDirect(query: string): Promise<ScraperAnime[]> 
         results.push({
           id,
           title,
-          url: `${mirror}${href}`,
-          image: img?.startsWith("http") ? img : `${mirror}${img}`,
+          url: `${mirror}${href || ""}`,
+          image: img ? (img.startsWith("http") ? img : `${mirror}${img}`) : "/placeholder.jpg",
           releaseDate: "Unknown"
         });
       }
@@ -211,8 +211,8 @@ export async function getRecentEpisodesDirect(page = 1): Promise<ScraperAnime[]>
         results.push({
           id,
           title,
-          url: `${mirror}${href}`,
-          image: img?.startsWith("http") ? img : `${mirror}${img}`,
+          url: `${mirror}${href || ""}`,
+          image: img ? (img.startsWith("http") ? img : `${mirror}${img}`) : "/placeholder.jpg",
           releaseDate: "New"
         });
       }

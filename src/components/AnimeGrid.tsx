@@ -1,6 +1,7 @@
 "use client";
 
-import React from "react";
+import React, { useRef } from "react";
+import { ChevronRight, ChevronLeft } from "lucide-react";
 import { Anime } from "@/data/anime";
 import AnimeCard from "./AnimeCard";
 
@@ -10,36 +11,54 @@ interface AnimeGridProps {
 }
 
 export default function AnimeGrid({ title, animes }: AnimeGridProps) {
+  const rowRef = useRef<HTMLDivElement>(null);
+
+  const scroll = (dir: "left" | "right") => {
+    if (!rowRef.current) return;
+    rowRef.current.scrollBy({ left: dir === "right" ? 600 : -600, behavior: "smooth" });
+  };
+
   return (
-    <section className="py-12 space-y-6">
-      <div className="container mx-auto px-6 lg:px-12 flex items-center justify-between">
-        <h2 className="text-2xl font-black tracking-tight text-white flex items-center gap-3">
-          <span className="w-2 h-8 bg-blue-600 rounded-full"></span>
+    <section className="py-8">
+      {/* Header */}
+      <div className="container mx-auto px-4 sm:px-6 flex items-center justify-between mb-5">
+        <h2 className="text-lg font-bold flex items-center gap-2.5" style={{ color: "var(--text-primary)" }}>
+          <span
+            className="inline-block w-1 h-5 rounded-full"
+            style={{ background: "linear-gradient(to bottom, var(--brand-primary), var(--brand-accent))" }}
+          />
           {title}
         </h2>
-        <button className="text-zinc-500 hover:text-white font-bold text-sm transition-colors flex items-center gap-1 uppercase tracking-widest">
-          View All
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
-        </button>
-      </div>
-
-      <div className="relative">
-        <div className="overflow-x-auto no-scrollbar scroll-smooth flex items-center gap-6 px-6 lg:px-12 pb-12">
-          {animes.map((anime) => (
-            <AnimeCard key={anime.id} anime={anime} />
-          ))}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => scroll("left")}
+            aria-label="Scroll left"
+            className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors hover:bg-white/10 hover:text-white"
+            style={{ color: "var(--text-muted)", border: "1px solid var(--border-subtle)" }}
+          >
+            <ChevronLeft size={16} />
+          </button>
+          <button
+            onClick={() => scroll("right")}
+            aria-label="Scroll right"
+            className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors hover:bg-white/10 hover:text-white"
+            style={{ color: "var(--text-muted)", border: "1px solid var(--border-subtle)" }}
+          >
+            <ChevronRight size={16} />
+          </button>
         </div>
       </div>
 
-      <style jsx global>{`
-        .no-scrollbar::-webkit-scrollbar {
-          display: none;
-        }
-        .no-scrollbar {
-          -ms-overflow-style: none;
-          scrollbar-width: none;
-        }
-      `}</style>
+      {/* Scroll row */}
+      <div
+        ref={rowRef}
+        className="scroll-row flex gap-4 px-4 sm:px-6 pb-6"
+        style={{ paddingBottom: "3rem" }} /* extra bottom padding for hover scale overflow */
+      >
+        {animes.map((anime) => (
+          <AnimeCard key={anime.id} anime={anime} fixed />
+        ))}
+      </div>
     </section>
   );
 }

@@ -1,47 +1,161 @@
 @import "tailwindcss";
 
+/* ─── Design Tokens ─────────────────────────────────────────────────────────── */
 :root {
-  --background: #020617;
-  --foreground: #f8fafc;
+  /* Brand */
+  --brand-primary:   #3b82f6; /* blue-500  */
+  --brand-accent:    #8b5cf6; /* violet-500 */
+  --brand-danger:    #ef4444; /* red-500   */
+  --brand-success:   #22c55e; /* green-500 */
+  --brand-warning:   #f59e0b; /* amber-500 */
+
+  /* Surface */
+  --bg-base:         #030712; /* gray-950  */
+  --bg-surface:      #0f172a; /* slate-900 */
+  --bg-elevated:     #1e293b; /* slate-800 */
+  --bg-overlay:      #334155; /* slate-700 */
+
+  /* Border */
+  --border-subtle:   rgba(148,163,184,0.08);
+  --border-default:  rgba(148,163,184,0.14);
+  --border-strong:   rgba(148,163,184,0.24);
+
+  /* Text */
+  --text-primary:    #f8fafc; /* slate-50  */
+  --text-secondary:  #94a3b8; /* slate-400 */
+  --text-muted:      #475569; /* slate-600 */
+  --text-inverted:   #030712;
+
+  /* Radius */
+  --radius-sm:  6px;
+  --radius-md:  12px;
+  --radius-lg:  16px;
+  --radius-xl:  24px;
+  --radius-full: 9999px;
+
+  /* Shadow */
+  --shadow-sm:  0 1px 3px rgba(0,0,0,0.4);
+  --shadow-md:  0 4px 16px rgba(0,0,0,0.5);
+  --shadow-lg:  0 12px 40px rgba(0,0,0,0.6);
+  --shadow-glow-blue:   0 0 40px rgba(59,130,246,0.25);
+  --shadow-glow-violet: 0 0 40px rgba(139,92,246,0.25);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+/* ─── Base ──────────────────────────────────────────────────────────────────── */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-geist-sans), ui-sans-serif, system-ui;
+  background-color: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  line-height: 1.6;
+  min-height: 100dvh;
 }
 
-/* Custom Premium Scrollbar */
-::-webkit-scrollbar {
-  width: 10px;
+/* ─── Selection ─────────────────────────────────────────────────────────────── */
+::selection {
+  background: rgba(59,130,246,0.35);
+  color: #f8fafc;
 }
 
-::-webkit-scrollbar-track {
-  background: #020617;
+/* ─── Focus ─────────────────────────────────────────────────────────────────── */
+:focus-visible {
+  outline: 2px solid var(--brand-primary);
+  outline-offset: 3px;
+  border-radius: var(--radius-sm);
 }
 
+/* ─── Scrollbar ─────────────────────────────────────────────────────────────── */
+::-webkit-scrollbar       { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
-  background: #1e293b;
-  border-radius: 9999px;
-  border: 3px solid #020617;
+  background: var(--bg-overlay);
+  border-radius: var(--radius-full);
 }
+::-webkit-scrollbar-thumb:hover { background: var(--brand-primary); }
 
-::-webkit-scrollbar-thumb:hover {
-  background: #334155;
-}
+/* ─── Utility classes ───────────────────────────────────────────────────────── */
 
+/* Glass card */
 .glass {
-  background: rgba(15, 23, 42, 0.6);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(51, 65, 85, 0.5);
+  background: rgba(15, 23, 42, 0.7);
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  border: 1px solid var(--border-default);
 }
 
+/* Horizontal scroll row (hide scrollbar) */
+.scroll-row {
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.scroll-row::-webkit-scrollbar { display: none; }
+
+/* Gradient text */
+.gradient-text {
+  background: linear-gradient(135deg, var(--brand-primary), var(--brand-accent));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Skeleton shimmer */
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
+}
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--bg-elevated) 25%,
+    var(--bg-overlay)  50%,
+    var(--bg-elevated) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.6s ease-in-out infinite;
+  border-radius: var(--radius-md);
+}
+
+/* Fade-in up */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0);    }
+}
+.animate-fade-in-up {
+  animation: fadeInUp 0.5s cubic-bezier(0.16,1,0.3,1) both;
+}
+
+/* Scale in */
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to   { opacity: 1; transform: scale(1);    }
+}
+.animate-scale-in {
+  animation: scaleIn 0.25s cubic-bezier(0.34,1.56,0.64,1) both;
+}
+
+/* Slow spin (for loading rings) */
+@keyframes spinSlow {
+  to { transform: rotate(360deg); }
+}
+.animate-spin-slow {
+  animation: spinSlow 3s linear infinite;
+}
+
+/* ─── Typography scale ──────────────────────────────────────────────────────── */
+h1,h2,h3,h4,h5,h6 {
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  color: var(--text-primary);
+}

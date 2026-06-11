@@ -1,124 +1,158 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import Link from "next/link";
+import { Play, Plus, Check, Star, Film, Users } from "lucide-react";
 import { useLanguage } from "@/context/LanguageContext";
 import { useWatchlist } from "@/context/WatchlistContext";
 import { Anime } from "@/data/anime";
 import WatchTogetherModal from "./WatchTogetherModal";
-import { Play, Check, Plus, Users, Star, Calendar, Tv } from "lucide-react";
 
 interface HeroProps { anime: Anime; }
 
 export default function Hero({ anime }: HeroProps) {
   const { language } = useLanguage();
-  const { addToWatchlist, isInWatchlist } = useWatchlist();
-  const [watchTogetherOpen, setWatchTogetherOpen] = useState(false);
-  const [loaded, setLoaded] = useState(false);
+  const { addToWatchlist, removeFromWatchlist, isInWatchlist } = useWatchlist();
+  const [watchOpen, setWatchOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
 
-  useEffect(() => { setLoaded(true); }, []);
+  useEffect(() => { const t = setTimeout(() => setMounted(true), 100); return () => clearTimeout(t); }, []);
 
   const isAdded = isInWatchlist(anime.id);
+  const title   = anime.title[language];
 
   return (
     <>
-      <div className="relative w-full h-[85vh] lg:h-[90vh] flex items-center overflow-hidden">
+      <section className="relative w-full overflow-hidden" style={{ height: "88vh", minHeight: 560 }}>
         {/* Background */}
-        <div className="absolute inset-0 z-0">
+        <div className="absolute inset-0">
           <img
             src={anime.banner}
-            alt={anime.title[language]}
-            className="w-full h-full object-cover object-top scale-105 transition-transform duration-[20000ms]"
-            style={{ transform: loaded ? "scale(1.08)" : "scale(1.0)" }}
+            alt=""
+            aria-hidden="true"
+            className="w-full h-full object-cover object-center"
+            style={{
+              transform: mounted ? "scale(1.06)" : "scale(1)",
+              transition: "transform 12s ease-out",
+              filter: "brightness(0.45)",
+            }}
           />
-          <div className="absolute inset-0 bg-gradient-to-r from-stone-950 via-stone-950/70 to-transparent" />
-          <div className="absolute inset-0 bg-gradient-to-t from-stone-950 via-transparent to-transparent" />
+          {/* Gradient overlays */}
+          <div
+            className="absolute inset-0"
+            style={{
+              background: "linear-gradient(to right, rgba(3,7,18,0.95) 0%, rgba(3,7,18,0.6) 45%, rgba(3,7,18,0.1) 80%, transparent 100%)",
+            }}
+          />
+          <div
+            className="absolute inset-0"
+            style={{ background: "linear-gradient(to top, rgba(3,7,18,1) 0%, rgba(3,7,18,0.4) 30%, transparent 60%)" }}
+          />
         </div>
 
-        <div className="container mx-auto px-6 lg:px-12 relative z-10">
-          <div
-            className="max-w-2xl space-y-6"
-            style={{ 
-              opacity: loaded ? 1 : 0, 
-              transform: loaded ? "translateY(0)" : "translateY(30px)", 
-              transition: "all 1s cubic-bezier(0.16, 1, 0.3, 1)" 
-            }}
-          >
-            {/* Badges */}
-            <div className="flex items-center gap-4 text-xs font-black tracking-[0.1em] flex-wrap uppercase">
-              {anime.tags.includes("New Release") && (
-                <span className="text-blue-400 bg-blue-500/10 px-4 py-1.5 rounded-full border border-blue-500/20">
-                  New Release
+        {/* Content */}
+        <div className="relative z-10 h-full flex items-center">
+          <div className="container mx-auto px-4 sm:px-6">
+            <div
+              className="max-w-2xl space-y-5"
+              style={{
+                opacity: mounted ? 1 : 0,
+                transform: mounted ? "translateY(0)" : "translateY(28px)",
+                transition: "all 0.8s cubic-bezier(0.16,1,0.3,1)",
+              }}
+            >
+              {/* Badges */}
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <span
+                  className="flex items-center gap-1.5 text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider"
+                  style={{ background: "rgba(245,158,11,0.15)", color: "#f59e0b", border: "1px solid rgba(245,158,11,0.3)" }}
+                >
+                  <Star size={11} fill="#f59e0b" />
+                  {anime.rating}
                 </span>
-              )}
-              <div className="flex items-center gap-2 text-zinc-300">
-                <Calendar className="w-4 h-4 text-zinc-500" />
-                {anime.year}
-              </div>
-              <div className="flex items-center gap-2 text-zinc-300">
-                <Tv className="w-4 h-4 text-zinc-500" />
-                {anime.episodes} Episodes
-              </div>
-              <div className="flex items-center gap-2 text-yellow-500 bg-yellow-500/10 px-3 py-1.5 rounded-full border border-yellow-500/20">
-                <Star className="w-4 h-4 fill-yellow-500" />
-                {anime.rating}
-              </div>
-            </div>
-
-            {/* Title */}
-            <h1 className="text-6xl lg:text-8xl font-black text-white leading-[0.9] tracking-tighter drop-shadow-2xl">
-              {anime.title[language]}
-            </h1>
-
-            {/* Description */}
-            <p className="text-lg text-zinc-400 line-clamp-3 leading-relaxed max-w-xl font-medium">
-              {anime.description}
-            </p>
-
-            {/* Tags */}
-            <div className="flex items-center gap-2 flex-wrap">
-              {anime.tags.map((tag) => (
-                <span key={tag} className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em] px-3 py-1.5 border border-white/5 rounded-xl bg-white/[0.03] backdrop-blur-sm">
-                  {tag}
+                <span
+                  className="flex items-center gap-1.5 text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider"
+                  style={{ background: "rgba(59,130,246,0.15)", color: "var(--brand-primary)", border: "1px solid rgba(59,130,246,0.3)" }}
+                >
+                  <Film size={11} />
+                  {anime.episodes} Episodes
                 </span>
-              ))}
-            </div>
+                <span className="text-sm font-semibold" style={{ color: "var(--text-muted)" }}>
+                  {anime.year}
+                </span>
+              </div>
 
-            {/* Action buttons */}
-            <div className="flex items-center gap-4 pt-4 flex-wrap">
-              <a href={`/watch/${anime.id}`}
-                className="px-10 py-5 bg-white text-black font-black rounded-2xl hover:bg-zinc-200 transition-all transform active:scale-95 flex items-center gap-3 text-lg shadow-2xl shadow-blue-500/20 group">
-                <Play className="w-6 h-6 fill-current group-hover:scale-110 transition-transform" />
-                Watch Now
-              </a>
-
-              <button
-                onClick={() => addToWatchlist(anime)}
-                disabled={isAdded}
-                className={`px-10 py-5 rounded-2xl border-2 font-black transition-all transform active:scale-95 flex items-center gap-3 text-lg
-                  ${isAdded 
-                    ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400 cursor-default" 
-                    : "bg-white/5 backdrop-blur-xl text-white border-white/10 hover:bg-white/10 hover:border-white/20 shadow-xl"}`}
+              {/* Title */}
+              <h1
+                className="text-4xl sm:text-6xl font-black leading-none tracking-tight"
+                style={{ color: "var(--text-primary)" }}
               >
-                {isAdded ? (
-                  <><Check className="w-6 h-6" /> In Watchlist</>
-                ) : (
-                  <><Plus className="w-6 h-6" /> Watchlist</>
-                )}
-              </button>
+                {title}
+              </h1>
 
-              <button
-                onClick={() => setWatchTogetherOpen(true)}
-                className="px-8 py-5 rounded-2xl border-2 border-indigo-500/30 bg-indigo-500/5 text-indigo-400 font-black transition-all transform active:scale-95 flex items-center gap-3 hover:bg-indigo-500/10 hover:border-indigo-500/50 shadow-xl"
-              >
-                <Users className="w-6 h-6" />
-                Watch Together
-              </button>
+              {/* Tags */}
+              <div className="flex items-center gap-2 flex-wrap">
+                {anime.tags.map((tag) => (
+                  <span
+                    key={tag}
+                    className="text-xs font-semibold px-2.5 py-1 rounded-lg uppercase tracking-wider"
+                    style={{ background: "rgba(255,255,255,0.07)", color: "var(--text-secondary)", border: "1px solid var(--border-subtle)" }}
+                  >
+                    {tag}
+                  </span>
+                ))}
+              </div>
+
+              {/* Description */}
+              <p className="text-base leading-relaxed max-w-xl line-clamp-3" style={{ color: "var(--text-secondary)" }}>
+                {anime.description}
+              </p>
+
+              {/* Actions */}
+              <div className="flex items-center gap-3 pt-1 flex-wrap">
+                <Link
+                  href={`/watch/${anime.id}`}
+                  className="flex items-center gap-2 px-7 py-3.5 rounded-xl font-bold text-base transition-all hover:opacity-90"
+                  style={{ background: "var(--text-primary)", color: "var(--text-inverted)" }}
+                >
+                  <Play size={18} fill="currentColor" />
+                  Watch Now
+                </Link>
+
+                <button
+                  onClick={() => isAdded ? removeFromWatchlist(anime.id) : addToWatchlist(anime)}
+                  className="flex items-center gap-2 px-5 py-3.5 rounded-xl font-semibold text-base transition-all hover:bg-white/15"
+                  style={{
+                    background: "rgba(255,255,255,0.08)",
+                    color: isAdded ? "#22c55e" : "var(--text-primary)",
+                    border: "1px solid rgba(255,255,255,0.12)",
+                    backdropFilter: "blur(8px)",
+                  }}
+                >
+                  {isAdded ? <Check size={17} /> : <Plus size={17} />}
+                  {isAdded ? "In Watchlist" : "Add to Watchlist"}
+                </button>
+
+                <button
+                  onClick={() => setWatchOpen(true)}
+                  className="flex items-center gap-2 px-4 py-3.5 rounded-xl font-semibold text-sm transition-all hover:bg-white/10"
+                  style={{
+                    background: "rgba(139,92,246,0.1)",
+                    color: "#a78bfa",
+                    border: "1px solid rgba(139,92,246,0.25)",
+                    backdropFilter: "blur(8px)",
+                  }}
+                >
+                  <Users size={16} />
+                  Watch Together
+                </button>
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      </section>
 
-      <WatchTogetherModal isOpen={watchTogetherOpen} onClose={() => setWatchTogetherOpen(false)} />
+      <WatchTogetherModal isOpen={watchOpen} onClose={() => setWatchOpen(false)} />
     </>
   );
 }
