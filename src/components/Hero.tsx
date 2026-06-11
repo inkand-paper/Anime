@@ -1,6 +1,8 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import Link from "next/link";
+import { Play, Plus, Check, Star, Film, Users } from "lucide-react";
 import { useLanguage } from "@/context/LanguageContext";
 import { useWatchlist } from "@/context/WatchlistContext";
 import { Anime } from "@/data/anime";
@@ -10,103 +12,147 @@ interface HeroProps { anime: Anime; }
 
 export default function Hero({ anime }: HeroProps) {
   const { language } = useLanguage();
-  const { addToWatchlist, isInWatchlist } = useWatchlist();
-  const [watchTogetherOpen, setWatchTogetherOpen] = useState(false);
-  const [loaded, setLoaded] = useState(false);
+  const { addToWatchlist, removeFromWatchlist, isInWatchlist } = useWatchlist();
+  const [watchOpen, setWatchOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
 
-  useEffect(() => { setLoaded(true); }, []);
+  useEffect(() => { const t = setTimeout(() => setMounted(true), 100); return () => clearTimeout(t); }, []);
 
   const isAdded = isInWatchlist(anime.id);
+  const title   = anime.title[language];
 
   return (
     <>
-      <div className="relative w-full h-[85vh] lg:h-[90vh] flex items-center overflow-hidden">
+      <section className="relative w-full overflow-hidden" style={{ height: "88vh", minHeight: 560 }}>
         {/* Background */}
-        <div className="absolute inset-0 z-0">
+        <div className="absolute inset-0">
           <img
             src={anime.banner}
-            alt={anime.title[language]}
-            className="w-full h-full object-cover object-top scale-105 transition-transform duration-[20000ms]"
-            style={{ transform: loaded ? "scale(1.08)" : "scale(1.0)" }}
+            alt=""
+            aria-hidden="true"
+            className="w-full h-full object-cover object-center"
+            style={{
+              transform: mounted ? "scale(1.06)" : "scale(1)",
+              transition: "transform 12s ease-out",
+              filter: "brightness(0.45)",
+            }}
           />
-          <div className="absolute inset-0 bg-gradient-to-r from-stone-950 via-stone-950/70 to-transparent" />
-          <div className="absolute inset-0 bg-gradient-to-t from-stone-950 via-transparent to-transparent" />
+          {/* Gradient overlays */}
+          <div
+            className="absolute inset-0"
+            style={{
+              background: "linear-gradient(to right, rgba(3,7,18,0.95) 0%, rgba(3,7,18,0.6) 45%, rgba(3,7,18,0.1) 80%, transparent 100%)",
+            }}
+          />
+          <div
+            className="absolute inset-0"
+            style={{ background: "linear-gradient(to top, rgba(3,7,18,1) 0%, rgba(3,7,18,0.4) 30%, transparent 60%)" }}
+          />
         </div>
 
-        <div className="container mx-auto px-6 lg:px-12 relative z-10">
-          <div
-            className="max-w-2xl space-y-5"
-            style={{ opacity: loaded ? 1 : 0, transform: loaded ? "translateY(0)" : "translateY(24px)", transition: "all 0.8s cubic-bezier(0.16,1,0.3,1)" }}
-          >
-            {/* Badges */}
-            <div className="flex items-center gap-3 text-sm font-bold tracking-wider flex-wrap">
-              {anime.tags.includes("New Release") && (
-                <span className="text-blue-400 bg-blue-500/10 px-3 py-1 rounded-full border border-blue-500/20 uppercase text-xs">
-                  New Release
+        {/* Content */}
+        <div className="relative z-10 h-full flex items-center">
+          <div className="container mx-auto px-4 sm:px-6">
+            <div
+              className="max-w-2xl space-y-5"
+              style={{
+                opacity: mounted ? 1 : 0,
+                transform: mounted ? "translateY(0)" : "translateY(28px)",
+                transition: "all 0.8s cubic-bezier(0.16,1,0.3,1)",
+              }}
+            >
+              {/* Badges */}
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <span
+                  className="flex items-center gap-1.5 text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider"
+                  style={{ background: "rgba(245,158,11,0.15)", color: "#f59e0b", border: "1px solid rgba(245,158,11,0.3)" }}
+                >
+                  <Star size={11} fill="#f59e0b" />
+                  {anime.rating}
                 </span>
-              )}
-              <span className="text-zinc-300">{anime.year}</span>
-              <span className="text-zinc-600">•</span>
-              <span className="text-zinc-300">{anime.episodes} Episodes</span>
-              <span className="text-zinc-600">•</span>
-              <span className="text-green-400 font-black">★ {anime.rating}</span>
-            </div>
-
-            {/* Title */}
-            <h1 className="text-5xl lg:text-7xl font-black text-white leading-tight break-words">
-              {anime.title[language]}
-            </h1>
-
-            {/* Description */}
-            <p className="text-lg text-zinc-300 line-clamp-3 leading-relaxed max-w-xl">
-              {anime.description}
-            </p>
-
-            {/* Tags */}
-            <div className="flex items-center gap-2 flex-wrap">
-              {anime.tags.map((tag) => (
-                <span key={tag} className="text-xs font-bold text-zinc-500 uppercase tracking-widest px-2.5 py-1 border border-zinc-800 rounded-lg bg-zinc-900/50">
-                  {tag}
+                <span
+                  className="flex items-center gap-1.5 text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider"
+                  style={{ background: "rgba(59,130,246,0.15)", color: "var(--brand-primary)", border: "1px solid rgba(59,130,246,0.3)" }}
+                >
+                  <Film size={11} />
+                  {anime.episodes} Episodes
                 </span>
-              ))}
-            </div>
+                <span className="text-sm font-semibold" style={{ color: "var(--text-muted)" }}>
+                  {anime.year}
+                </span>
+              </div>
 
-            {/* Action buttons */}
-            <div className="flex items-center gap-3 pt-2 flex-wrap">
-              <a href={`/watch/${anime.id}`}
-                className="px-8 py-4 bg-white text-black font-bold rounded-xl hover:bg-zinc-200 transition-all transform active:scale-95 flex items-center gap-2 text-lg shadow-xl shadow-white/10">
-                <svg className="w-6 h-6 fill-current" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
-                Watch Now
-              </a>
-
-              <button
-                onClick={() => addToWatchlist(anime)}
-                disabled={isAdded}
-                className={`px-8 py-4 rounded-xl border font-bold transition-all transform active:scale-95 flex items-center gap-2 text-lg
-                  ${isAdded ? "bg-zinc-800 border-zinc-700 text-green-400 cursor-default" : "bg-zinc-800/80 backdrop-blur-md text-white border-zinc-700 hover:bg-zinc-700"}`}
+              {/* Title */}
+              <h1
+                className="text-4xl sm:text-6xl font-black leading-none tracking-tight"
+                style={{ color: "var(--text-primary)" }}
               >
-                {isAdded ? (
-                  <><svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" /></svg> In Watchlist</>
-                ) : (
-                  <><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg> Add to Watchlist</>
-                )}
-              </button>
+                {title}
+              </h1>
 
-              <button
-                onClick={() => setWatchTogetherOpen(true)}
-                className="px-6 py-4 rounded-xl border border-purple-500/40 bg-purple-500/10 text-purple-300 font-bold transition-all transform active:scale-95 flex items-center gap-2 hover:bg-purple-500/20"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
-                Watch Together
-              </button>
+              {/* Tags */}
+              <div className="flex items-center gap-2 flex-wrap">
+                {anime.tags.map((tag) => (
+                  <span
+                    key={tag}
+                    className="text-xs font-semibold px-2.5 py-1 rounded-lg uppercase tracking-wider"
+                    style={{ background: "rgba(255,255,255,0.07)", color: "var(--text-secondary)", border: "1px solid var(--border-subtle)" }}
+                  >
+                    {tag}
+                  </span>
+                ))}
+              </div>
+
+              {/* Description */}
+              <p className="text-base leading-relaxed max-w-xl line-clamp-3" style={{ color: "var(--text-secondary)" }}>
+                {anime.description}
+              </p>
+
+              {/* Actions */}
+              <div className="flex items-center gap-3 pt-1 flex-wrap">
+                <Link
+                  href={`/watch/${anime.id}`}
+                  className="flex items-center gap-2 px-7 py-3.5 rounded-xl font-bold text-base transition-all hover:opacity-90"
+                  style={{ background: "var(--text-primary)", color: "var(--text-inverted)" }}
+                >
+                  <Play size={18} fill="currentColor" />
+                  Watch Now
+                </Link>
+
+                <button
+                  onClick={() => isAdded ? removeFromWatchlist(anime.id) : addToWatchlist(anime)}
+                  className="flex items-center gap-2 px-5 py-3.5 rounded-xl font-semibold text-base transition-all hover:bg-white/15"
+                  style={{
+                    background: "rgba(255,255,255,0.08)",
+                    color: isAdded ? "#22c55e" : "var(--text-primary)",
+                    border: "1px solid rgba(255,255,255,0.12)",
+                    backdropFilter: "blur(8px)",
+                  }}
+                >
+                  {isAdded ? <Check size={17} /> : <Plus size={17} />}
+                  {isAdded ? "In Watchlist" : "Add to Watchlist"}
+                </button>
+
+                <button
+                  onClick={() => setWatchOpen(true)}
+                  className="flex items-center gap-2 px-4 py-3.5 rounded-xl font-semibold text-sm transition-all hover:bg-white/10"
+                  style={{
+                    background: "rgba(139,92,246,0.1)",
+                    color: "#a78bfa",
+                    border: "1px solid rgba(139,92,246,0.25)",
+                    backdropFilter: "blur(8px)",
+                  }}
+                >
+                  <Users size={16} />
+                  Watch Together
+                </button>
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      </section>
 
-      <WatchTogetherModal isOpen={watchTogetherOpen} onClose={() => setWatchTogetherOpen(false)} />
+      <WatchTogetherModal isOpen={watchOpen} onClose={() => setWatchOpen(false)} />
     </>
   );
 }
