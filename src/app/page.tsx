@@ -1,76 +1,102 @@
-// Server component — fetches anime from DB + Real-time Scraper
-import { prisma } from "@/lib/prisma";
-import { getRecentEpisodes } from "@/lib/consumet";
+import { Suspense } from "react";
+import { getTrending, getPopular, getTopRated, getRecentlyAired, normalizeAnime } from "@/lib/anilist";
 import Hero from "@/components/Hero";
 import AnimeGrid from "@/components/AnimeGrid";
 import AdBanner from "@/components/AdBanner";
+import { Anime } from "@/data/anime";
+import { TrendingUp, Flame, Star, Tv } from "lucide-react";
 
-// Map DB Anime row to the shape expected by components
-function mapAnime(a: any) {
+// Revalidate every 10 minutes
+export const revalidate = 600;
+
+async function fetchAllSections() {
+  const [trending, popular, topRated, recent] = await Promise.allSettled([
+    getTrending(1, 20),
+    getPopular(1, 20),
+    getTopRated(1, 20),
+    getRecentlyAired(1, 20),
+  ]);
+
+  const safe = <T,>(r: PromiseSettledResult<T>, fallback: T) =>
+    r.status === "fulfilled" ? r.value : fallback;
+
+  const empty = { media: [], pageInfo: { total: 0, currentPage: 1, hasNextPage: false } };
+
   return {
-    id: a.id,
-    title: {
-      English: a.titleEn || a.title,
-      Japanese: a.titleJp || a.title,
-      Chinese:  a.titleCn || a.title,
-    },
-    description: a.description ?? "",
-    image:       a.image       ?? "/placeholder.jpg",
-    banner:      a.banner      ?? a.image ?? "/placeholder.jpg",
-    year:        a.year        ?? "—",
-    rating:      String(a.rating ?? "N/A"),
-    episodes:    a.totalEpisodes ?? a.episodes ?? 0,
-    tags:        Array.isArray(a.tags) ? a.tags : (a.tags ? a.tags.split(",").map((t: string) => t.trim()) : []),
+    trending: safe(trending, empty).media.map(normalizeAnime) as Anime[],
+    popular:  safe(popular,  empty).media.map(normalizeAnime) as Anime[],
+    topRated: safe(topRated, empty).media.map(normalizeAnime) as Anime[],
+    recent:   safe(recent,   empty).media.map(normalizeAnime) as Anime[],
   };
 }
 
-export default async function Home() {
-  // 1. Fetch Featured/Dubbed from local DB
-  const dbAnime = await prisma.anime.findMany({
-    orderBy: { createdAt: "desc" },
-    take: 10,
-  });
+export default async function HomePage() {
+  const { trending, popular, topRated, recent } = await fetchAllSections();
 
-  // 2. Fetch VAST amounts from Real-Time API (Internal Scraper)
-  const [recent1, recent2] = await Promise.all([
-    getRecentEpisodes(1),
-    getRecentEpisodes(2),
-  ]);
+  const hero = trending[0] ?? popular[0];
 
-  const recentReleases = [...recent1, ...recent2].map(mapAnime);
-  const manualFeatured = dbAnime.map(mapAnime);
-
-  // Blend them
-  const trending = [...manualFeatured, ...recentReleases.slice(0, 10)];
-  const featured = manualFeatured[0] || recentReleases[0];
-
-  if (!featured) {
+  if (!hero) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center text-zinc-500 gap-4">
-        <div className="w-12 h-12 bg-white/5 rounded-full animate-pulse" />
-        <p className="text-sm font-black uppercase tracking-[0.4em]">Establishing Nexus...</p>
+      <div className="min-h-dvh flex items-center justify-center">
+        <p className="text-sm font-semibold" style={{ color: "var(--text-muted)" }}>
+          Loading content...
+        </p>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col bg-black">
-      {/* Hero */}
-      <Hero anime={featured} />
+    <div className="flex flex-col">
+      <Hero anime={hero} />
 
-      {/* Content grid - overlaps hero slightly for cinematic feel */}
-      <div className="lg:-mt-24 relative z-20 space-y-12 pb-32">
-        <AnimeGrid title="Global Sub Releases" animes={recentReleases.slice(0, 12)} />
-        
-        <div className="container mx-auto px-6">
+      <div className="relative z-10 space-y-2 pb-20" style={{ marginTop: "-6rem" }}>
+        {trending.length > 0 && (
+          <Suspense>
+            <AnimeGrid
+              title="Trending Now"
+              icon="trending"
+              animes={trending}
+              viewAllHref="/browse?type=trending"
+            />
+          </Suspense>
+        )}
+
+        <div className="container mx-auto px-4 sm:px-6">
           <AdBanner slot="home-mid" />
         </div>
 
-        {manualFeatured.length > 0 && (
-          <AnimeGrid title="Native Dubbed Selection" animes={manualFeatured} />
+        {recent.length > 0 && (
+          <Suspense>
+            <AnimeGrid
+              title="Currently Airing"
+              icon="tv"
+              animes={recent}
+              viewAllHref="/browse?type=recent"
+            />
+          </Suspense>
         )}
 
-        <AnimeGrid title="Recently Discovered" animes={recentReleases.slice(12, 24)} />
+        {popular.length > 0 && (
+          <Suspense>
+            <AnimeGrid
+              title="All-Time Popular"
+              icon="flame"
+              animes={popular}
+              viewAllHref="/browse?type=popular"
+            />
+          </Suspense>
+        )}
+
+        {topRated.length > 0 && (
+          <Suspense>
+            <AnimeGrid
+              title="Top Rated"
+              icon="star"
+              animes={topRated}
+              viewAllHref="/browse?type=top"
+            />
+          </Suspense>
+        )}
       </div>
     </div>
   );

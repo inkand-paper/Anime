@@ -14,55 +14,51 @@ const WatchlistContext = createContext<WatchlistContextType | undefined>(undefin
 
 export function WatchlistProvider({ children }: { children: ReactNode }) {
   const [watchlist, setWatchlist] = useState<Anime[]>([]);
+  const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
-    const saved = localStorage.getItem("anime_watchlist");
-    if (saved) {
-      try {
-        setWatchlist(JSON.parse(saved));
-      } catch (e) {
-        console.error("Failed to parse watchlist", e);
-      }
-    }
+    try {
+      const saved = localStorage.getItem("anistream_watchlist_v2");
+      if (saved) setWatchlist(JSON.parse(saved));
+    } catch {}
+    setHydrated(true);
   }, []);
 
-  const save = (list: Anime[]) => {
+  const persist = (list: Anime[]) => {
     setWatchlist(list);
-    localStorage.setItem("anime_watchlist", JSON.stringify(list));
+    try { localStorage.setItem("anistream_watchlist_v2", JSON.stringify(list)); } catch {}
   };
 
   const addToWatchlist = (anime: Anime) => {
-    if (!watchlist.find(a => a.id === anime.id)) {
-      save([...watchlist, anime]);
-    }
+    if (!watchlist.find((a) => a.id === anime.id)) persist([...watchlist, anime]);
   };
 
   const removeFromWatchlist = (id: string) => {
-    save(watchlist.filter(a => a.id !== id));
+    persist(watchlist.filter((a) => a.id !== id));
   };
 
-  const isInWatchlist = (id: string) => {
-    return !!watchlist.find(a => a.id === id);
-  };
+  const isInWatchlist = (id: string) => watchlist.some((a) => a.id === id);
+
+  // Don't render watchlist UI until hydrated to avoid SSR mismatch
+  if (!hydrated) {
+    return (
+      <WatchlistContext.Provider
+        value={{ watchlist: [], addToWatchlist: () => {}, removeFromWatchlist: () => {}, isInWatchlist: () => false }}
+      >
+        {children}
+      </WatchlistContext.Provider>
+    );
+  }
 
   return (
-    <LanguageProvider_Wrapper>
-        <WatchlistContext.Provider value={{ watchlist, addToWatchlist, removeFromWatchlist, isInWatchlist }}>
-        {children}
-        </WatchlistContext.Provider>
-    </LanguageProvider_Wrapper>
+    <WatchlistContext.Provider value={{ watchlist, addToWatchlist, removeFromWatchlist, isInWatchlist }}>
+      {children}
+    </WatchlistContext.Provider>
   );
 }
 
-// Helper to keep context clean
-function LanguageProvider_Wrapper({ children }: { children: ReactNode }) {
-    return <>{children}</>;
-}
-
 export function useWatchlist() {
-  const context = useContext(WatchlistContext);
-  if (context === undefined) {
-    throw new Error("useWatchlist must be used within a WatchlistProvider");
-  }
-  return context;
+  const ctx = useContext(WatchlistContext);
+  if (!ctx) throw new Error("useWatchlist must be used within WatchlistProvider");
+  return ctx;
 }

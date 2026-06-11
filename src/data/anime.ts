@@ -1,21 +1,28 @@
+/**
+ * Canonical Anime type used throughout the frontend.
+ * Data is fetched live from AniList API — no mock data.
+ */
 export interface Anime {
-  id: string;
+  id: string;           // AniList numeric ID as string
+  malId: string | null;
   title: {
     English: string;
     Japanese: string;
-    Chinese: string;
+    Chinese: string;    // AniList has no ZH title — mapped to Romaji
+    Romaji: string;
   };
   image: string;
   banner: string;
-  rating: string;
+  rating: string;       // e.g. "8.7"
   year: string;
   episodes: number;
   description: string;
-  tags: string[];
+  tags: string[];       // genre names
+  status: string;
+  studios: string[];
+  format: string;
+  color: string;        // dominant cover color from AniList
 }
 
-// This file is kept for TypeScript type exports only.
-// Actual anime data is fetched live from the scraper (AniNeko.to)
-// and from the database (seeded with real slugs in prisma/seed.ts).
-// No hardcoded mock anime — everything is dynamic.
+// No mock data — all content comes from AniList + AniWatch APIs.
 export const MOCK_ANIME: Anime[] = [];
