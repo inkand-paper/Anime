@@ -59,6 +59,7 @@ export async function resolveVideoSources(
         const episodeSources = await getEpisodeSources(epEntry.id);
         if (episodeSources) {
           episodeSources.sources.forEach((src, i) => {
+            console.log(`[resolver] Resolved Source [${i}]:`, src.url);
             sources.push({
               label: src.label || `Server ${i + 1}`,
               url: src.url,

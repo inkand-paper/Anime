@@ -116,6 +116,32 @@ async function main() {
         "Monkey D. Luffy sets sail to find the legendary One Piece and become the Pirate King, assembling a crew of talented pirates along the way.",
       tags: "Adventure, Comedy, Shounen",
     },
+    {
+      id: "go-for-it-nakamura",
+      titleEn: "Go For It, Nakamura!",
+      titleJp: "ガンバレ！中村くん！！",
+      titleCn: "加油！中村",
+      image: "https://artworks.thetvdb.com/artworks/can_id_be_one_of_the_cool_kids/posters/61f4340a6b4a6.jpg",
+      banner: "https://artworks.thetvdb.com/artworks/can_id_be_one_of_the_cool_kids/posters/61f4340a6b4a6.jpg",
+      year: "2021",
+      rating: 8.2,
+      episodes: 1,
+      description: "Nakamura is a shy boy who has a crush on his classmate. Watch his daily struggles to get closer to his love interest in this heartwarming story.",
+      tags: "Comedy, Romance, School",
+    },
+    {
+      id: "always-a-catch-the-fish-i-missed-was-big",
+      titleEn: "Always a Catch!",
+      titleJp: "逃がした魚は大きかったが、釣りあげた魚はもっと大きかった",
+      titleCn: "错过的鱼很大，但钓到的鱼更大",
+      image: "https://m.media-amazon.com/images/M/MV5BMzI2MDYyMjUtZTAzYy00ZGQyLWE2YTctYmZiYjY3ZGRhMDFiXkEyXkFqcGdeQXVyMTEzMTI1Mjk3._V1_.jpg",
+      banner: "https://m.media-amazon.com/images/M/MV5BMzI2MDYyMjUtZTAzYy00ZGQyLWE2YTctYmZiYjY3ZGRhMDFiXkEyXkFqcGdeQXVyMTEzMTI1Mjk3._V1_.jpg",
+      year: "2024",
+      rating: 8.5,
+      episodes: 12,
+      description: "A story about a girl who loses her fiancé but finds someone even better. A delightful romantic comedy with a touch of fantasy.",
+      tags: "Fantasy, Romance, Comedy",
+    },
   ];
 
   for (const a of MOCK_ANIME) {

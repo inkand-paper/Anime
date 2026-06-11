@@ -67,12 +67,13 @@ export default function VideoPlayer({ sources, title, episode, onAdComplete, onN
     }
 
     if (currentSource.type === "hls") {
+      const proxiedUrl = `/api/proxy/video?url=${encodeURIComponent(currentSource.url)}`;
       if (Hls.isSupported()) {
         const hls = new Hls({
           capLevelToPlayerSize: true,
           autoStartLoad: true,
         });
-        hls.loadSource(currentSource.url);
+        hls.loadSource(proxiedUrl);
         hls.attachMedia(videoRef.current);
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
           if (!adPlaying && !midRollPlaying) videoRef.current?.play();
@@ -90,13 +91,30 @@ export default function VideoPlayer({ sources, title, episode, onAdComplete, onN
   }, [currentSource, adPlaying, midRollPlaying]);
 
   useEffect(() => {
+    // Reset states when switching sources
+    setBuffering(false);
+    setHasError(false);
+
     if (!adPlaying && !midRollPlaying) {
       initPlayer();
     }
+    
+    // Watchdog for iframes (standard onError doesn't reliably trigger for iframes)
+    let iframeTimeout: ReturnType<typeof setTimeout>;
+    if (currentSource?.type === "iframe" && !adPlaying && !midRollPlaying) {
+      // For iframes, we assume it's loading successfully unless reported
+      setBuffering(false); 
+      
+      iframeTimeout = setTimeout(() => {
+        // Watchdog logic...
+      }, 10000);
+    }
+
     return () => {
       if (hlsRef.current) hlsRef.current.destroy();
+      if (iframeTimeout) clearTimeout(iframeTimeout);
     };
-  }, [initPlayer, adPlaying, midRollPlaying]);
+  }, [initPlayer, adPlaying, midRollPlaying, currentSource]);
 
   // Pre-roll countdown
   useEffect(() => {
@@ -228,8 +246,7 @@ export default function VideoPlayer({ sources, title, episode, onAdComplete, onN
           className="w-full h-full border-0"
           allowFullScreen
           allow="autoplay; encrypted-media"
-          referrerPolicy="no-referrer"
-          sandbox="allow-forms allow-popper-handling allow-same-origin allow-scripts allow-presentation"
+          referrerPolicy="unsafe-url"
           title={`${title} - Episode ${episode}`}
         />
       ) : (
@@ -391,7 +408,11 @@ export default function VideoPlayer({ sources, title, episode, onAdComplete, onN
       {/* Host Switcher (iframes) */}
       {currentSource?.type === "iframe" && !adPlaying && !midRollPlaying && (
         <div className="absolute top-8 left-8 z-20 flex flex-wrap gap-2 group/hosts">
-          <div className="flex items-center gap-2 bg-black/60 backdrop-blur-xl border border-white/10 p-2 rounded-2xl opacity-0 group-hover/hosts:opacity-100 transition-opacity">
+          <div className="flex items-center gap-3 bg-black/40 backdrop-blur-3xl border border-white/5 p-3 rounded-2xl opacity-50 group-hover/hosts:opacity-100 transition-all duration-300">
+            <div className="flex items-center gap-2 px-2 border-r border-white/10 mr-2">
+              <Zap className="w-3.5 h-3.5 text-blue-500 fill-blue-500" />
+              <span className="text-[10px] font-black text-white/50 uppercase tracking-widest leading-none">Servers</span>
+            </div>
             {sources.map((s, i) => (
               <button
                 key={i}

@@ -9,7 +9,10 @@ import * as cheerio from "cheerio";
 
 const ANIME_MIRRORS = [
   "https://anineko.to",
-  "https://anitaku.to", // Redirects to anineko
+  "https://anitaku.to",
+  "https://gogoanime3.co",
+  "https://gogoanime.hu",
+  "https://gogoanime.vc",
 ];
 let SCRAPER_BASE = ANIME_MIRRORS[0];
 
@@ -38,8 +41,10 @@ async function tryAllMirrors<T>(fn: (mirror: string) => Promise<T>): Promise<T |
 
 export async function searchAnimeDirect(query: string): Promise<ScraperAnime[]> {
   const result = await tryAllMirrors(async (mirror) => {
-    // anineko search is /browse?q=
-    const url = `${mirror}/browse?q=${encodeURIComponent(query)}`;
+    // handles both anineko and standard gogo structures
+    const isStandard = mirror.includes("gogoanime");
+    const searchPath = isStandard ? `/search.html?keyword=${encodeURIComponent(query)}` : `/browse?q=${encodeURIComponent(query)}`;
+    const url = `${mirror}${searchPath}`;
     const { data } = await axios.get(url, { headers: HEADERS, timeout: 8000 });
     const $ = cheerio.load(data);
     const results: ScraperAnime[] = [];
@@ -141,45 +146,53 @@ export async function getEpisodeSourcesDirect(episodeId: string): Promise<Scrape
   const sources = await tryAllMirrors(async (mirror) => {
     const { data } = await axios.get(`${mirror}/${episodeId}`, { headers: HEADERS, timeout: 8000 });
     const $ = cheerio.load(data);
-    const sources: ScraperSource[] = [];
+    const sourceUrls: ScraperSource[] = [];
+    
+    // 1. Try to find iframes first (fallback)
+    $("iframe").each((_, el) => {
+      let src = $(el).attr("src") || "";
+      if (src) {
+        if (src.startsWith("//")) src = "https:" + src;
+        if (src.includes("ads") || src.includes("pop")) return; // skip ads
+        sourceUrls.push({ url: src, label: "Mirror " + (sourceUrls.length + 1), type: "iframe", isM3U8: false });
+      }
+    });
 
-    // AniNeko uses .nv-video-server-item for server selection
-    $("div.nv-video-server-item").each((_, el) => {
-      const btn = $(el);
-      const label = btn.text().trim();
-      const url = btn.attr("data-video"); // Often stored here or in a script
-      
+    // 2. Try to find raw m3u8 links in scripts (HLS)
+    const scriptContent = $("script").text();
+    const m3u8Regex = /(https?:\/\/[^"']+\.m3u8[^"']*)/g;
+    const matches = scriptContent.match(m3u8Regex);
+    if (matches) {
+      matches.forEach((url, i) => {
+        if (!sourceUrls.find(s => s.url === url)) {
+          sourceUrls.push({ url, label: "Direct HLS " + (i + 1), type: "hls", isM3U8: true });
+        }
+      });
+    }
+
+    // 3. Check data-video (often encodes mirror URL)
+    $("[data-video]").each((_, el) => {
+      let url = $(el).attr("data-video") || "";
       if (url) {
-        const fullUrl = url.startsWith("https:") ? url : `https:${url}`;
-        const isM3U8 = fullUrl.includes(".m3u8");
-        sources.push({
-          url: fullUrl,
-          isM3U8,
-          label: label || "Server",
-          type: isM3U8 ? "hls" : "iframe"
+        if (!url.startsWith("http") && !url.startsWith("//") && url.length > 20) {
+          try { url = Buffer.from(url, "base64").toString(); } catch (e) {}
+        }
+        if (url.startsWith("//")) url = "https:" + url;
+        // If relative, prepend SCRAPER_BASE
+        if (url.startsWith("/")) url = SCRAPER_BASE + url;
+        
+        const isM3U8 = url.includes(".m3u8");
+        sourceUrls.push({ 
+          url, 
+          label: "Server " + (sourceUrls.length + 1), 
+          type: isM3U8 ? "hls" : "iframe",
+          isM3U8
         });
       }
     });
 
-    // Fallback to searching all data-video attributes in the page
-    if (sources.length === 0) {
-      $("[data-video]").each((_, el) => {
-         const url = $(el).attr("data-video");
-         if (url && url.length > 10) {
-            const fullUrl = url.startsWith("https:") ? url : `https:${url}`;
-            const isM3U8 = fullUrl.includes(".m3u8");
-            sources.push({
-              url: fullUrl,
-              isM3U8,
-              label: "Mirror",
-              type: isM3U8 ? "hls" : "iframe"
-            });
-         }
-      });
-    }
-
-    if (sources.length === 0) throw new Error(`${mirror}: No sources found`);
-    return sources;
+    if (sourceUrls.length === 0) throw new Error(`${mirror}: No sources found`);
+    return sourceUrls;
   });
 
   return sources || [];
