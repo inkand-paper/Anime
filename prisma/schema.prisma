@@ -4,12 +4,10 @@ generator client {
 
 datasource db {
   provider = "sqlite"
-  url      = "file:./dev.db"
+  url      = env("DATABASE_URL")
 }
 
-// ---------------------------------------------------------------------------
-// User & Auth
-// ---------------------------------------------------------------------------
+// ─── Auth ────────────────────────────────────────────────────────────────────
 
 model User {
   id            String    @id @default(cuid())
@@ -18,23 +16,23 @@ model User {
   emailVerified DateTime?
   password      String?
   image         String?
-  role          Role      @default(USER)
+  role          String    @default("USER") // USER | PREMIUM | ADMIN
   referralCode  String    @unique @default(cuid())
   referredById  String?
 
-  referredBy    User?     @relation("Referrals", fields: [referredById], references: [id])
-  referrals     User[]    @relation("Referrals")
+  referredBy  User?   @relation("Referrals", fields: [referredById], references: [id])
+  referrals   User[]  @relation("Referrals")
 
-  accounts      Account[]
-  sessions      Session[]
-  profile       Profile?
-  subscription  Subscription?
-  watchlist     WatchlistItem[]
-  watchRooms    WatchRoomMember[]
-  hostedRooms   WatchRoom[]
+  accounts     Account[]
+  sessions     Session[]
+  profile      Profile?
+  subscription Subscription?
+  watchlist    WatchlistItem[]
+  watchRooms   WatchRoomMember[]
+  hostedRooms  WatchRoom[]
 
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([email])
   @@index([referralCode])
@@ -65,7 +63,8 @@ model Session {
   sessionToken String   @unique
   userId       String
   expires      DateTime
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
 }
@@ -78,29 +77,13 @@ model VerificationToken {
   @@unique([identifier, token])
 }
 
-// ---------------------------------------------------------------------------
-// Core Content
-// ---------------------------------------------------------------------------
+model Profile {
+  id        String  @id @default(cuid())
+  userId    String  @unique
+  bio       String?
+  avatarUrl String?
 
-model Anime {
-  id          String   @id @default(cuid())
-  titleEn     String   @unique
-  titleJp     String?
-  titleCn     String?
-  description String?
-  image       String?
-  banner      String?
-  year        String?
-  rating      Float?
-  episodes    Int?
-  tags        String   @default("") // Comma separated tags
-  
-  hostMappings HostMapping[]
-  
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  @@index([titleEn])
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model PasswordResetToken {
@@ -112,116 +95,93 @@ model PasswordResetToken {
   @@unique([email, token])
 }
 
-model Profile {
-  id        String  @id @default(cuid())
-  userId    String  @unique
-  bio       String?
-  avatarUrl String?
-  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-}
-
-// ---------------------------------------------------------------------------
-// Subscription & Billing
-// ---------------------------------------------------------------------------
+// ─── Subscription ────────────────────────────────────────────────────────────
 
 model Subscription {
-  id          String             @id @default(cuid())
-  userId      String             @unique
-  plan        String             @default("FREE")
-  status      String             @default("INACTIVE")
-  externalId  String?            @unique // PayPal / Stripe subscription ID
-  startDate   DateTime           @default(now())
+  id          String    @id @default(cuid())
+  userId      String    @unique
+  plan        String    @default("FREE") // FREE | MONTHLY | YEARLY
+  status      String    @default("INACTIVE") // INACTIVE | ACTIVE | PAST_DUE | CANCELLED
+  externalId  String?   @unique
+  startDate   DateTime  @default(now())
   endDate     DateTime?
   cancelledAt DateTime?
 
-  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@index([externalId])
   @@index([status])
 }
 
-// ---------------------------------------------------------------------------
-// Features (Watchlist & Rooms)
-// ---------------------------------------------------------------------------
+// ─── Watchlist & Rooms ───────────────────────────────────────────────────────
 
 model WatchlistItem {
   id      String   @id @default(cuid())
   userId  String
-  animeId String
+  animeId String   // AniList ID (integer as string)
   addedAt DateTime @default(now())
 
-  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, animeId])
   @@index([userId])
 }
 
 model WatchRoom {
-  id          String            @id @default(cuid())
-  inviteCode  String            @unique
-  animeId     String
-  episode     Int               @default(1)
-  currentTime Float             @default(0)
-  isPlaying   Boolean           @default(false)
-  hostId      String
-  expiresAt   DateTime
-  createdAt   DateTime          @default(now())
+  id         String   @id @default(cuid())
+  inviteCode String   @unique
+  animeId    String
+  episode    Int      @default(1)
+  currentTime Float   @default(0)
+  isPlaying  Boolean  @default(false)
+  hostId     String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
 
-  host        User              @relation(fields: [hostId], references: [id], onDelete: Cascade)
-  members     WatchRoomMember[]
+  host    User              @relation(fields: [hostId], references: [id], onDelete: Cascade)
+  members WatchRoomMember[]
 
   @@index([inviteCode])
-  @@index([expiresAt])
 }
 
 model WatchRoomMember {
-  id       String    @id @default(cuid())
+  id       String   @id @default(cuid())
   roomId   String
   userId   String
-  joinedAt DateTime  @default(now())
+  joinedAt DateTime @default(now())
 
-  room     WatchRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  room WatchRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([roomId, userId])
   @@index([roomId])
 }
 
-// ---------------------------------------------------------------------------
-// Video Redundancy (Host Mapping)
-// ---------------------------------------------------------------------------
+// ─── Host Mapping (dubbed video storage) ────────────────────────────────────
 
 model HostMapping {
-  id        String      @id @default(cuid())
-  animeId   String
+  id        String   @id @default(cuid())
+  animeId   String   // AniList ID
   episode   Int
-  hostName    String
+  host      String   // DOODSTREAM | VOE | FILEMOON | STREAMWISH | STREAMTAPE | MIXDROP | MEGASTREAM
   embedUrl  String
-  type      String      @default("iframe") // iframe, hls, mp4
-  dubbed    Boolean     @default(true)
-  verified  Boolean     @default(false)
-  createdAt DateTime    @default(now())
-  updatedAt DateTime    @updatedAt
+  embedType String   @default("iframe") // iframe | hls | mp4
+  dubbed    Boolean  @default(true)
+  verified  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  anime     Anime    @relation(fields: [animeId], references: [id], onDelete: Cascade)
-
-  @@unique([animeId, episode, hostName])
+  @@unique([animeId, episode, host])
   @@index([animeId, episode])
 }
 
-// ---------------------------------------------------------------------------
-// Infrastructure
-// ---------------------------------------------------------------------------
+// ─── Rate Limiting ───────────────────────────────────────────────────────────
 
 model RateLimit {
-  id        String   @id @default(cuid())
-  key       String   @unique  // e.g. "ip:1.2.3.4:login"
-  count     Int      @default(1)
-  resetAt   DateTime
+  id      String   @id @default(cuid())
+  key     String   @unique
+  count   Int      @default(1)
+  resetAt DateTime
 
   @@index([key])
   @@index([resetAt])
 }
-

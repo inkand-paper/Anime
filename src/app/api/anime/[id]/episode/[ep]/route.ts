@@ -1,15 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getAnimeById } from "@/lib/anilist";
 import { resolveVideoSources } from "@/lib/video-resolver";
 
-/**
- * GET /api/anime/[id]/episode/[ep]
- *
- * Returns the resolved video sources for a given anime + episode number.
- * Resolution order: dubbed DB mappings → Gogoanime → Zoro
- *
- * The client (VideoPlayer / watch page) calls this instead of
- * talking to Consumet directly — keeps external API URL server-side only.
- */
+// GET /api/anime/[id]/episode/[ep]
+// id = AniList numeric ID, ep = episode number
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string; ep: string }> }
@@ -21,11 +15,28 @@ export async function GET(
     return NextResponse.json({ error: "Invalid episode number" }, { status: 400 });
   }
 
-  const sources = await resolveVideoSources(decodeURIComponent(id), episode);
+  // Fetch anime metadata to get romaji title and MAL ID for AniWatch matching
+  let romajiTitle: string | undefined;
+  let malId: number | null = null;
+
+  try {
+    const numericId = parseInt(id, 10);
+    if (!isNaN(numericId)) {
+      const anime = await getAnimeById(numericId);
+      if (anime) {
+        romajiTitle = anime.title.romaji;
+        malId = anime.idMal;
+      }
+    }
+  } catch {
+    // non-fatal — resolver will fall back to slug matching
+  }
+
+  const sources = await resolveVideoSources(id, episode, romajiTitle, malId);
 
   if (sources.length === 0) {
     return NextResponse.json(
-      { error: "No sources found for this episode", sources: [] },
+      { error: "No stream sources found for this episode.", sources: [] },
       { status: 404 }
     );
   }
