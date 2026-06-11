@@ -1,11 +1,13 @@
 "use client";
 
 import React, { useState } from "react";
+import { X } from "lucide-react";
 
 type AdBannerVariant = "leaderboard" | "sidebar" | "banner";
 
 interface AdBannerProps {
   variant?: AdBannerVariant;
+  slot?: string;
   className?: string;
 }
 
@@ -48,10 +50,10 @@ export default function AdBanner({ variant = "leaderboard", className = "" }: Ad
           </a>
           <button
             onClick={() => setDismissed(true)}
-            className="text-zinc-700 hover:text-zinc-400 transition-colors text-lg leading-none"
+            className="p-1.5 text-zinc-700 hover:text-zinc-400 transition-colors rounded-lg hover:bg-white/5"
             title="Close ad"
           >
-            ×
+            <X className="w-3.5 h-3.5" />
           </button>
         </div>
       </div>

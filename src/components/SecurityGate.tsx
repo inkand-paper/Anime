@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
+import { Lock, ShieldCheck, AlertCircle, Fingerprint, Timer, Check } from "lucide-react";
 
 export default function SecurityGate({ children }: { children: React.ReactNode }) {
   const [isVerified, setIsVerified] = useState<boolean | null>(null);
@@ -19,7 +20,6 @@ export default function SecurityGate({ children }: { children: React.ReactNode }
     else { setIsVerified(false); generateChallenge(); }
   }, []);
 
-  // Lockout countdown
   useEffect(() => {
     if (!locked || lockSecs <= 0) return;
     const t = setInterval(() => {
@@ -47,8 +47,8 @@ export default function SecurityGate({ children }: { children: React.ReactNode }
   const handleVerify = (e: React.FormEvent) => {
     e.preventDefault();
     if (locked) return;
-    if (!humanChecked) { setError("Please confirm you are not a robot."); return; }
-    if (userInput.trim() === "") { setError("Please enter an answer."); return; }
+    if (!humanChecked) { setError("Please verify your humanity."); return; }
+    if (userInput.trim() === "") { setError("Challenge answer required."); return; }
 
     if (parseInt(userInput, 10) === challenge?.result) {
       sessionStorage.setItem("captcha_verified", "true");
@@ -58,10 +58,10 @@ export default function SecurityGate({ children }: { children: React.ReactNode }
       setAttempts(next);
       if (next >= 5) {
         setLocked(true);
-        setLockSecs(30);
+        setLockSecs(60);
         setError("");
       } else {
-        setError(`Wrong answer. ${5 - next} attempt${5 - next !== 1 ? "s" : ""} remaining.`);
+        setError(`Incorrect. ${5 - next} verification attempts remaining.`);
         setTimeout(generateChallenge, 600);
       }
     }
@@ -72,93 +72,104 @@ export default function SecurityGate({ children }: { children: React.ReactNode }
 
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black overflow-hidden">
-      {/* Glow blobs */}
-      <div className="absolute inset-0 opacity-20 pointer-events-none">
-        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-blue-600 rounded-full blur-[120px] animate-pulse" />
-        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-purple-600 rounded-full blur-[120px] animate-pulse delay-700" />
+      <div className="absolute inset-0 opacity-30 pointer-events-none">
+        <div className="absolute top-[-20%] left-[-20%] w-[60%] h-[60%] bg-blue-600/20 rounded-full blur-[160px] animate-pulse" />
+        <div className="absolute bottom-[-20%] right-[-20%] w-[60%] h-[60%] bg-indigo-600/20 rounded-full blur-[160px] animate-pulse delay-1000" />
       </div>
 
-      <div className="relative w-full max-w-md p-8 mx-4 bg-zinc-900/60 backdrop-blur-xl border border-zinc-800 rounded-3xl shadow-2xl">
+      <div className="relative w-full max-w-lg p-10 mx-5 bg-zinc-950/40 backdrop-blur-3xl border border-white/10 rounded-[40px] shadow-2xl">
         <div className="flex flex-col items-center text-center">
 
-          {/* Lock icon */}
-          <div className="w-16 h-16 mb-5 flex items-center justify-center bg-zinc-800 rounded-2xl border border-zinc-700 shadow-inner">
-            <svg className="w-8 h-8 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-            </svg>
+          <div className="w-20 h-20 mb-8 flex items-center justify-center bg-white/5 rounded-3xl border border-white/10 shadow-2xl">
+            <ShieldCheck className="w-10 h-10 text-blue-500" strokeWidth={1.5} />
           </div>
 
-          <h1 className="text-2xl font-bold text-white mb-1 tracking-tight">Security Verification</h1>
-          <p className="text-zinc-400 text-sm mb-7 leading-relaxed">
-            Solve the challenge below to confirm you&apos;re human.
+          <h1 className="text-3xl font-black text-white mb-2 tracking-tighter uppercase">Access Protected</h1>
+          <p className="text-zinc-500 text-sm mb-10 leading-relaxed font-bold max-w-[280px]">
+            Solve the challenge below to confirm your session is authentic.
           </p>
 
           {locked ? (
-            <div className="w-full py-10 text-center space-y-2">
-              <div className="text-4xl mb-3">🔒</div>
-              <p className="text-red-400 font-bold">Too many failed attempts</p>
-              <p className="text-zinc-500 text-sm">
-                Try again in <span className="font-mono text-white font-bold">{lockSecs}s</span>
+            <div className="w-full py-12 px-6 flex flex-col items-center bg-red-500/5 rounded-3xl border border-red-500/20">
+              <Timer className="w-12 h-12 text-red-500 mb-4 animate-pulse" />
+              <p className="text-red-500 font-black uppercase tracking-widest text-sm">Security Lockout</p>
+              <p className="text-zinc-600 text-xs font-bold mt-2 leading-relaxed">
+                Too many failed attempts. Please wait.
               </p>
+              <div className="mt-8 flex items-center gap-3 px-6 py-3 bg-red-500/10 rounded-full border border-red-500/10">
+                <span className="text-red-400 font-black font-mono text-xl">{lockSecs}s</span>
+                <span className="text-red-500/40 text-xs font-black uppercase tracking-wider">Remaining</span>
+              </div>
             </div>
           ) : (
-            <form onSubmit={handleVerify} className="w-full space-y-5">
-              {/* Challenge display */}
-              <div className="flex items-center justify-center gap-4 text-3xl font-mono font-bold text-white bg-zinc-950/60 py-6 rounded-2xl border border-zinc-800">
-                <span className="text-blue-500">{challenge?.a}</span>
-                <span className="text-zinc-600">{challenge?.op}</span>
-                <span className="text-purple-500">{challenge?.b}</span>
-                <span className="text-zinc-600">=</span>
-                <span className="text-zinc-400">?</span>
+            <form onSubmit={handleVerify} className="w-full space-y-6">
+              <div className="flex items-center justify-center gap-6 text-5xl font-black text-white bg-white/[0.03] py-10 rounded-[32px] border border-white/5 shadow-inner">
+                <span className="text-blue-500 tracking-tighter">{challenge?.a}</span>
+                <span className="text-zinc-800 text-3xl">{challenge?.op}</span>
+                <span className="text-indigo-500 tracking-tighter">{challenge?.b}</span>
+                <span className="text-zinc-800 text-3xl font-light">=</span>
+                <span className="text-zinc-700">?</span>
               </div>
 
-              {/* Answer input */}
-              <input
-                ref={inputRef}
-                type="number"
-                inputMode="numeric"
-                value={userInput}
-                onChange={(e) => { setUserInput(e.target.value); setError(""); }}
-                placeholder="Enter your answer..."
-                className={`w-full px-4 py-4 bg-zinc-950 border ${error ? "border-red-500" : "border-zinc-800"} rounded-2xl text-white text-center text-xl focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all`}
-              />
-
-              {/* Human checkbox */}
-              <label className="flex items-center gap-3 cursor-pointer text-left px-1 select-none">
+              <div className="relative group">
+                <div className="absolute left-6 top-1/2 -translate-y-1/2 text-zinc-600 group-focus-within:text-blue-500 transition-colors">
+                  <Fingerprint className="w-5 h-5" />
+                </div>
                 <input
-                  type="checkbox"
-                  checked={humanChecked}
-                  onChange={(e) => { setHumanChecked(e.target.checked); setError(""); }}
-                  className="w-5 h-5 accent-blue-500 rounded cursor-pointer flex-shrink-0"
+                  ref={inputRef}
+                  type="number"
+                  inputMode="numeric"
+                  value={userInput}
+                  onChange={(e) => { setUserInput(e.target.value); setError(""); }}
+                  placeholder="YOUR ANSWER"
+                  className={`w-full pl-16 pr-6 py-5 bg-white/[0.03] border-2 ${error ? "border-red-500/50 bg-red-500/5" : "border-white/5 focus:border-blue-500/50"} rounded-2xl text-white text-xl font-black focus:outline-none transition-all placeholder:text-zinc-800 tracking-[0.3em]`}
                 />
-                <span className="text-sm text-zinc-400">I am not a robot</span>
+              </div>
+
+              <label className="flex items-center gap-4 cursor-pointer text-left px-4 py-4 rounded-2xl border border-white/5 bg-white/[0.02] hover:bg-white/[0.04] transition-all select-none">
+                <div className="relative flex items-center justify-center flex-shrink-0">
+                  <input
+                    type="checkbox"
+                    checked={humanChecked}
+                    onChange={(e) => { setHumanChecked(e.target.checked); setError(""); }}
+                    className="peer w-6 h-6 opacity-0 absolute cursor-pointer"
+                  />
+                  <div className="w-6 h-6 border-2 border-zinc-700 rounded-lg peer-checked:bg-blue-600 peer-checked:border-blue-600 transition-all flex items-center justify-center">
+                    {humanChecked && <Check className="w-4 h-4 text-white" strokeWidth={3} />}
+                  </div>
+                </div>
+                <span className="text-sm text-zinc-500 font-bold uppercase tracking-widest">I am not a robot</span>
               </label>
 
-              {/* Error message */}
-              {error && <p className="text-red-500 text-xs font-medium text-center">{error}</p>}
-
-              {/* Attempt dots */}
-              {attempts > 0 && (
-                <div className="flex justify-center gap-1.5">
-                  {Array.from({ length: 5 }).map((_, i) => (
-                    <div key={i} className="w-2 h-2 rounded-full transition-all duration-300"
-                      style={{ background: i < attempts ? "#ef4444" : "#27272a", transform: i < attempts ? "scale(1.3)" : "scale(1)" }} />
-                  ))}
+              {error && (
+                <div className="flex items-center justify-center gap-2 text-red-500 bg-red-500/10 py-3 rounded-xl border border-red-500/10">
+                  <AlertCircle className="w-4 h-4" />
+                  <p className="text-[11px] font-black uppercase tracking-wider">{error}</p>
                 </div>
               )}
 
               <button
                 type="submit"
-                className="w-full py-4 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-bold rounded-2xl text-lg shadow-lg shadow-blue-500/20 transform active:scale-95 transition-all duration-200"
+                className="w-full py-5 bg-white text-black font-black rounded-2xl text-lg uppercase tracking-widest shadow-2xl transform active:scale-95 transition-all hover:bg-zinc-200"
               >
-                Verify &amp; Enter
+                Unlock Access
               </button>
             </form>
           )}
 
-          <p className="mt-7 text-[10px] text-zinc-600 uppercase tracking-widest font-semibold italic">
-            Powered by AnimePortal Shield
-          </p>
+          <div className="mt-10 flex flex-col items-center gap-3">
+            <p className="text-[10px] text-zinc-700 uppercase tracking-[0.3em] font-black">
+              AnimePortal Shield v2.4
+            </p>
+            <div className="flex gap-1.5">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div
+                  key={i}
+                  className={`h-1 rounded-full transition-all duration-500 ${i < attempts ? "bg-red-500 w-4" : "bg-zinc-900 w-1"}`}
+                />
+              ))}
+            </div>
+          </div>
         </div>
       </div>
     </div>

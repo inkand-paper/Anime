@@ -7,7 +7,9 @@ export async function GET(req: NextRequest) {
   const provider = (req.nextUrl.searchParams.get("provider") ?? "gogoanime") as "gogoanime" | "zoro";
 
   if (!q?.trim()) {
-    return NextResponse.json({ error: "q is required" }, { status: 400 });
+    const { getRecentEpisodes } = await import("@/lib/consumet");
+    const results = await getRecentEpisodes(1);
+    return NextResponse.json({ results });
   }
 
   const results = await searchAnime(q, provider);

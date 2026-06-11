@@ -1,31 +1,44 @@
-# Project Progress: Anime Portal Platform
+# AnimePortal — Production Hardening Changelog
 
-This document summarizes all the milestones and features implemented so far for the Anime Portal platform.
-
-## 🛡️ Milestone 1: Foundation & Security
-- **Anti-Bot Security Gate**: Implemented a global challenge gate using a math-based captcha to prevent automated bot access.
-- **DevTools Mitigation**: Integrated a security layer that detects when a user attempts to "Inspect Element" or open DevTools, triggering an immediate page reload to protect premium content.
-- **Premium Design System**: Established a high-aesthetic CSS framework using Tailwind CSS, featuring glassmorphism, custom typography (Inter/black), and sleek dark-mode elements.
-
-## 🎨 Milestone 2: Frontend & Discovery (HBO Max/Hotstar Style)
-- **Premium Navbar**: Responsive navigation with multi-language support (English, Japanese, Chinese) and social media entry points.
-- **Hero Discovery**: Dynamic landing section featuring high-quality anime spotlights with metadata badges.
-- **Interactive Anime Card Layout**: Expand-on-hover card system (Hotstar Style) with integrated "Add to Watchlist" quick actions and interactive play buttons.
-- **Search Engine Overlay**: Aniweb.ru style search interface with live suggestions, search history, and popular searches.
-- **Watchlist Page**: Dedicated user section to manage and view saved animes, with full state persistence.
-
-## 🔑 Milestone 3: Auth, Database & Subscription Engine
-- **Prisma & SQLite Integration**: Fully configured database schema for Users, Accounts, Profiles, Subscriptions, and Watchlists.
-- **NextAuth v5 (Auth.js)**: Robust authentication system with credentials support and entry points for Google/Facebook social login.
-- **Paywall Logic**: Automatic thumbnail-locking for "New Release" titles. Non-premium users see a "Premium Only" overlay.
-- **Premium Upsell Modal**: A beautifully designed interactive modal that triggers when users try to access locked content, featuring tiered pricing.
-- **Referral System**: Automated generation of unique referral codes and reward logic (crediting referrers with 2 months of premium access).
-
-## 📺 Milestone 4: Streaming Infrastructure & Fallbacks
-- **Custom Player Wrapper**: A premium HTML5/Next.js video player with custom controls and aesthetic overlays.
-- **Multi-Host Resolver**: A service that supports 7 different video hosting APIs (Goda, Vidstreaming, Hydrax, Mp4Upload, Doodstream, Streamtape, and Generic HLS).
-- **Automated Fallback Controller**: The player automatically rotates through the fallback hosts if the primary stream fails to load.
-- **Ad Insertion Engine**: Built-in support for pre-roll and mid-roll video advertisements with skip timers and dedicated on-page banner spaces.
+All completed changes for the production-level overhaul (Milestone 5).
 
 ---
-*Built with Next.js 14+, TypeScript, Tailwind CSS, Prisma, and NextAuth.js.*
+
+## Milestone 5.1 — Backend Security & Auth Hardening
+
+- **Password hashing**: Implemented `bcryptjs` with 12 rounds in `registerUser` server action.
+- **Zod validation**: All registration inputs validated server-side with descriptive field-level errors returned to the client.
+- **Transactional referral rewards**: Referral reward now uses `prisma.$transaction` to ensure atomic subscription creation and role update.
+- **NextAuth hardening**: Replaced placeholder auth with real `compare()` verification against hashed passwords. Added `role` to JWT token and session.
+- **Security middleware**: `src/middleware.ts` sets CSP, HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, and Permissions-Policy headers globally. Adds route-level auth protection for `/watchlist` and `/profile`.
+- **Prisma schema hardening**: Added DB indexes on all foreign keys (`userId`, `email`, `referralCode`, `animeId`). Added `PasswordResetToken` model for future email-based resets. All relations use `onDelete: Cascade`.
+
+## Milestone 5.2 — UI/UX Refinement
+
+- **All emojis removed** from every component: `SecurityGate`, `Navbar`, `Hero`, `AnimeCard`, `PremiumModal`, and `AdBanner`.
+- **Professional iconography**: Replaced with `lucide-react` icons throughout — `ShieldCheck`, `Lock`, `Fingerprint`, `Languages`, `Globe`, `Star`, `Play`, `Check`, `Plus`, `Users`, `Zap`, `Ban`, `Monitor`, `Gift`, `X`, etc.
+- **Navbar redesign**: Rounded `rounded-2xl` buttons, glassmorphism language dropdown with section header, professional icon-only social buttons.
+- **Hero redesign**: Impact typography (`text-8xl font-black tracking-tighter`), badge row with `Calendar`/`Tv`/`Star` icons, glassmorphism CTAs.
+- **AnimeCard redesign**: `rounded-3xl` cards, cleaner lock overlay with `Lock` icon, icon-button play/watchlist actions.
+- **PremiumModal redesign**: Feature list uses icon + text layout (no emojis), legal footer, encrypted badge with `Lock` icon.
+- **SecurityGate redesign**: `ShieldCheck` header icon, attempt progress dots, `Fingerprint` input icon, `Timer` for lockout state.
+
+## Milestone 5.3 — Data Integrity & DB Features
+
+- **Anime model**: Added `Anime` model to Prisma schema with `titleEn`, `titleJp`, `titleCn`, `image`, `banner`, `year`, `rating`, `episodes`, `tags` (comma-separated).
+- **HostMapping relation**: Connected `HostMapping` to `Anime` model with cascade delete. Renamed fields for clarity (`hostName`, `url`, `type`).
+- **Home page wired to DB**: `src/app/page.tsx` is now a server component that fetches real `Anime` rows via Prisma and maps them to component types.
+- **Video resolver wired to DB**: `resolveVideoSources()` now queries `hostMapping` table for dubbed sources (priority 1–7), then falls back to Consumet Gogoanime and Zoro APIs.
+- **Seed script**: `prisma/seed.js` populates the database with initial anime records and mock episode host mappings.
+- **Database migrated**: Two migrations applied — `production_hardening` and `add_anime_discovery_model`.
+
+## Milestone 5.4 — DevOps & Deployment
+
+- **Multi-stage Dockerfile**: `deps` → `builder` → `runner` with non-root `nextjs` user.
+- **docker-compose.yml**: Orchestrates `app` (Next.js), `redis`, and `nginx` with health checks and named volumes.
+- **Nginx config**: HTTP redirect, TLS 1.3, security headers, gzip, rate-limiting zones (30 req/min API, 5 req/min auth), static asset caching.
+- **Docker entrypoint**: Runs `prisma migrate deploy` before starting the server.
+- **Health check endpoint**: `GET /api/health` returns `{ status: "ok", timestamp }`.
+- **`.gitignore`**: Excludes `.env`, SQLite files, `.next/`, `node_modules/`.
+- **`.env.example`**: Documents every environment variable with descriptions and examples.
+- **`README.md`**: Full developer documentation — setup, env vars, DB commands, video host registration, Docker deployment, SSL, security overview, project structure, and roadmap.

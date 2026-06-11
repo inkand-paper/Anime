@@ -31,6 +31,9 @@ model User {
   
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
+
+  @@index([email])
+  @@index([referralCode])
 }
 
 model Account {
@@ -50,6 +53,7 @@ model Account {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerAccountId])
+  @@index([userId])
 }
 
 model Session {
@@ -58,6 +62,8 @@ model Session {
   userId       String
   expires      DateTime
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model VerificationToken {
@@ -68,23 +74,60 @@ model VerificationToken {
   @@unique([identifier, token])
 }
 
+model Anime {
+  id          String   @id @default(cuid())
+  titleEn     String
+  titleJp     String?
+  titleCn     String?
+  description String?
+  image       String?
+  banner      String?
+  year        String?
+  rating      Float?
+  episodes    Int?
+  tags        String   @default("") // Comma separated tags
+  
+  hostMappings HostMapping[]
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([titleEn])
+}
+
+model PasswordResetToken {
+
+  id      String   @id @default(cuid())
+  email   String
+  token   String   @unique
+  expires DateTime
+
+  @@unique([email, token])
+}
+
 model Profile {
   id        String  @id @default(cuid())
   userId    String  @unique
   bio       String?
   avatarUrl String?
   user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model Subscription {
-  id        String   @id @default(cuid())
-  userId    String   @unique
-  status    String   @default("INACTIVE") // INACTIVE, ACTIVE, EXPIRED
-  plan      String   @default("FREE")     // FREE, PREMIUM
-  startDate DateTime @default(now())
-  endDate   DateTime?
+  id         String   @id @default(cuid())
+  userId     String   @unique
+  externalId String?  @unique // Stripe/PayPal subscription ID
+  status     String   @default("INACTIVE") // INACTIVE, ACTIVE, EXPIRED, CANCELLED, PAST_DUE
+  plan       String   @default("FREE")     // FREE, PREMIUM
+  startDate  DateTime @default(now())
+  endDate    DateTime?
   
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([externalId])
 }
 
 model WatchlistItem {
@@ -96,7 +139,9 @@ model WatchlistItem {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, animeId])
+  @@index([userId])
 }
+
 
 // ─── Host Mapping ─────────────────────────────────────────────────────────────
 // Stores embed URLs for dubbed episodes across the 7 fallback hosts.
@@ -104,14 +149,17 @@ model WatchlistItem {
 
 model HostMapping {
   id        String   @id @default(cuid())
-  animeId   String   // Gogoanime slug, e.g. "one-piece"
+  animeId   String   
   episode   Int
-  host      String   // One of: Doodstream | VOE | Filemoon | Streamwish | Streamtape | MixDrop | Megastream
-  embedUrl  String   // Full embed URL for this host
-  dubbed    Boolean  @default(true)
+  hostName  String   // One of: Doodstream | VOE | Filemoon | Streamwish | Streamtape | MixDrop | Megastream
+  url       String   // Full embed URL for this host
+  type      String   @default("iframe") // iframe, hls, mp4
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([animeId, episode, host])
+  anime     Anime    @relation(fields: [animeId], references: [id], onDelete: Cascade)
+
+  @@unique([animeId, episode, hostName])
   @@index([animeId, episode])
 }
+

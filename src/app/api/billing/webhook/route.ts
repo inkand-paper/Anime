@@ -57,8 +57,8 @@ export async function POST(req: NextRequest) {
 
       case "customer.subscription.deleted":
       case "BILLING.SUBSCRIPTION.CANCELLED": {
-        const resource = body.resource as Record<string, unknown>;
-        const subId = (resource?.id ?? (body.data as Record<string, unknown>)?.object as Record<string, unknown>)?.id as string;
+        const resource = body.resource as any;
+        const subId = (resource?.id ?? (body.data as any)?.object?.id) as string;
         if (subId) await cancelSubscription(subId);
         break;
       }
@@ -83,7 +83,7 @@ export async function POST(req: NextRequest) {
 }
 
 async function renewSubscription(externalId: string) {
-  const sub = await prisma.subscription.findFirst({ where: { externalId } });
+  const sub = await (prisma.subscription as any).findFirst({ where: { externalId } });
   if (!sub) return;
 
   const newEnd = new Date(sub.endDate ?? new Date());
@@ -106,7 +106,7 @@ async function renewSubscription(externalId: string) {
 }
 
 async function cancelSubscription(externalId: string) {
-  const sub = await prisma.subscription.findFirst({ where: { externalId } });
+  const sub = await (prisma.subscription as any).findFirst({ where: { externalId } });
   if (!sub) return;
 
   await prisma.subscription.update({
@@ -123,7 +123,7 @@ async function cancelSubscription(externalId: string) {
 }
 
 async function markPastDue(externalId: string) {
-  const sub = await prisma.subscription.findFirst({ where: { externalId } });
+  const sub = await (prisma.subscription as any).findFirst({ where: { externalId } });
   if (!sub) return;
 
   await prisma.subscription.update({
