@@ -1,97 +1,89 @@
 "use client";
 
 import React from "react";
+import Link from "next/link";
 import { useWatchlist } from "@/context/WatchlistContext";
 import { useLanguage } from "@/context/LanguageContext";
 import AnimeCard from "@/components/AnimeCard";
-import Link from "next/link";
-import { Bookmark, Sparkles, ChevronLeft, Trash2, Plus } from "lucide-react";
+import { Bookmark, TrendingUp, Trash2 } from "lucide-react";
 
 export default function WatchlistPage() {
   const { watchlist, removeFromWatchlist } = useWatchlist();
   const { language } = useLanguage();
 
   return (
-    <div className="min-h-screen bg-black pt-24 pb-20 selection:bg-blue-500/30">
-      <div className="container mx-auto px-6">
+    <div className="min-h-dvh pb-20" style={{ background: "var(--bg-base)" }}>
+      <div className="container mx-auto px-4 sm:px-6 pt-8 max-w-screen-2xl">
+
         {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-end justify-between mb-12 gap-6">
-          <div className="space-y-2">
-            <Link href="/" className="text-zinc-500 hover:text-white transition-colors text-xs font-black uppercase tracking-widest flex items-center gap-2 group mb-4">
-              <ChevronLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
-              Storefront
-            </Link>
-            <h1 className="text-5xl font-black text-white tracking-tighter uppercase">My Watchlist</h1>
-            <div className="flex items-center gap-3">
-              <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
-              <p className="text-zinc-500 text-xs font-black uppercase tracking-widest">
-                {watchlist.length} {watchlist.length === 1 ? "Selected Title" : "Selected Titles"}
+        <div className="flex items-end justify-between mb-8 gap-4">
+          <div className="flex items-center gap-3">
+            <div
+              className="w-10 h-10 rounded-xl flex items-center justify-center"
+              style={{ background: "var(--bg-elevated)", border: "1px solid var(--border-default)" }}
+            >
+              <Bookmark size={18} style={{ color: "var(--brand-primary)" }} />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold" style={{ color: "var(--text-primary)" }}>
+                My Watchlist
+              </h1>
+              <p className="text-sm mt-0.5" style={{ color: "var(--text-muted)" }}>
+                {watchlist.length} {watchlist.length === 1 ? "title" : "titles"} saved
               </p>
             </div>
           </div>
-          
+
           {watchlist.length > 0 && (
-            <Link href="/browse" className="px-6 py-3 bg-white/[0.03] border border-white/10 rounded-2xl text-[10px] font-black text-zinc-400 hover:text-white hover:border-white/20 transition-all uppercase tracking-[0.2em] flex items-center gap-2">
-              <Plus className="w-4 h-4" />
-              Discover More
-            </Link>
+            <button
+              onClick={() => watchlist.forEach((a) => removeFromWatchlist(a.id))}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold transition-all hover:bg-red-500/10 hover:text-red-400"
+              style={{
+                color: "var(--text-muted)",
+                border: "1px solid var(--border-subtle)",
+              }}
+            >
+              <Trash2 size={14} />
+              Clear all
+            </button>
           )}
         </div>
 
         {watchlist.length > 0 ? (
-          <div className="space-y-16 animate-in fade-in duration-700">
-            {/* Grid of cards */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-y-12 gap-x-6">
-              {watchlist.map((anime) => (
-                <AnimeCard key={anime.id} anime={anime} />
-              ))}
-            </div>
-
-            {/* Clear all */}
-            <div className="flex flex-col items-center gap-4 pt-10 border-t border-white/5">
-              <button
-                onClick={() => {
-                  if (confirm("Permanently clear your entire watchlist?")) {
-                    watchlist.forEach((a) => removeFromWatchlist(a.id));
-                  }
-                }}
-                className="group flex items-center gap-3 px-8 py-3.5 text-[10px] font-black text-zinc-600 hover:text-red-500 transition-all border border-white/5 hover:border-red-500/20 rounded-2xl bg-white/[0.01] hover:bg-red-500/5 uppercase tracking-[0.3em]"
-              >
-                <Trash2 className="w-4 h-4 group-hover:rotate-12 transition-transform" />
-                Flush Watchlist
-              </button>
-              <p className="text-[10px] text-zinc-800 font-bold uppercase tracking-widest italic">
-                Local Session Cache • 0.04ms Operation
-              </p>
-            </div>
+          <div
+            className="grid gap-x-4 gap-y-10"
+            style={{ gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))" }}
+          >
+            {watchlist.map((anime) => (
+              <AnimeCard key={anime.id} anime={anime} />
+            ))}
           </div>
         ) : (
-          <div className="flex flex-col items-center justify-center py-40 text-center space-y-10 animate-in zoom-in-95 duration-700">
-            <div className="relative">
-              <div className="absolute inset-0 bg-blue-600/20 rounded-full blur-[40px] animate-pulse" />
-              <div className="relative w-28 h-28 bg-zinc-900/40 backdrop-blur-3xl border border-white/10 rounded-[32px] flex items-center justify-center shadow-2xl">
-                <Bookmark className="w-12 h-12 text-zinc-700" strokeWidth={1} />
-              </div>
+          <div className="flex flex-col items-center justify-center py-32 gap-6 text-center">
+            <div
+              className="w-20 h-20 rounded-2xl flex items-center justify-center"
+              style={{ background: "var(--bg-elevated)", border: "1px solid var(--border-default)" }}
+            >
+              <Bookmark size={32} style={{ color: "var(--text-muted)" }} />
             </div>
-            
-            <div className="space-y-4">
-              <h2 className="text-3xl font-black text-white tracking-tight uppercase">Void Detected</h2>
-              <p className="text-zinc-500 max-w-sm leading-relaxed font-medium mx-auto">
-                Your library is currently empty. Bookmark titles while browsing to curate your personal collection.
+            <div>
+              <h2 className="text-xl font-bold mb-2" style={{ color: "var(--text-primary)" }}>
+                Your watchlist is empty
+              </h2>
+              <p className="text-sm max-w-xs" style={{ color: "var(--text-secondary)" }}>
+                Hover over any anime card and click Save to add it here for quick access.
               </p>
             </div>
-            
-            <Link href="/" className="group relative px-10 py-5 bg-white text-black font-black rounded-2xl hover:bg-white hover:scale-105 transition-all text-xs uppercase tracking-[0.3em] shadow-2xl flex items-center gap-3">
-              <Sparkles className="w-4 h-4 text-blue-600" />
-              Launch Explorer
+            <Link
+              href="/browse"
+              className="flex items-center gap-2 px-6 py-3 rounded-xl font-semibold text-sm text-white transition-all hover:opacity-90"
+              style={{ background: "var(--brand-primary)" }}
+            >
+              <TrendingUp size={16} />
+              Discover Anime
             </Link>
           </div>
         )}
-      </div>
-
-      {/* Decorative text */}
-      <div className="absolute bottom-10 right-[-2%] text-[12rem] font-black text-white/[0.02] leading-none pointer-events-none select-none uppercase tracking-tighter">
-        Vault
       </div>
     </div>
   );

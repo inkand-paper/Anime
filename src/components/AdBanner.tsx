@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useState } from "react";
-import { X } from "lucide-react";
+import React, { useState, useMemo } from "react";
+import { X, Zap, ShoppingBag, MessageCircle } from "lucide-react";
+import { cn } from "@/lib/cn";
 
 type AdBannerVariant = "leaderboard" | "sidebar" | "banner";
 
@@ -11,56 +12,114 @@ interface AdBannerProps {
   className?: string;
 }
 
-const AD_PLACEHOLDER_COPY = [
-  { headline: "Upgrade to Premium", sub: "Watch new episodes 48h early. Ad-free. 4K HDR.", cta: "Try Free →", color: "from-blue-600 to-purple-600" },
-  { headline: "Anime Merch Store", sub: "Official posters, figures, and apparel. Limited edition drops.", cta: "Shop Now →", color: "from-pink-600 to-orange-500" },
-  { headline: "Join our Discord", sub: "10,000+ anime fans. Discuss, share, and discover.", cta: "Join Free →", color: "from-indigo-600 to-blue-500" },
+const ADS = [
+  {
+    headline: "Upgrade to Premium",
+    sub: "Watch new episodes 48h early. Ad-free viewing. Up to 4K HDR.",
+    cta: "Try Premium",
+    Icon: Zap,
+    gradient: "var(--brand-primary), var(--brand-accent)",
+  },
+  {
+    headline: "Anime Merch Store",
+    sub: "Official figures, posters and apparel. Limited edition drops weekly.",
+    cta: "Shop Now",
+    Icon: ShoppingBag,
+    gradient: "#ec4899, #f97316",
+  },
+  {
+    headline: "Join our Community",
+    sub: "10,000+ anime fans discussing episodes, sharing rankings and more.",
+    cta: "Join Discord",
+    Icon: MessageCircle,
+    gradient: "#5865f2, #4752c4",
+  },
 ];
 
-const dims: Record<AdBannerVariant, { w: string; h: string; label: string }> = {
-  leaderboard: { w: "w-full", h: "h-[90px]",  label: "728×90 Leaderboard" },
-  sidebar:     { w: "w-full", h: "h-[250px]", label: "300×250 Medium Rectangle" },
-  banner:      { w: "w-full", h: "h-[60px]",  label: "468×60 Banner" },
+const HEIGHTS: Record<AdBannerVariant, string> = {
+  leaderboard: "h-20",
+  sidebar:     "h-56",
+  banner:      "h-14",
 };
 
-export default function AdBanner({ variant = "leaderboard", className = "" }: AdBannerProps) {
+export default function AdBanner({ variant = "leaderboard", slot: _slot, className }: AdBannerProps) {
   const [dismissed, setDismissed] = useState(false);
-  const ad = AD_PLACEHOLDER_COPY[Math.floor(Math.random() * AD_PLACEHOLDER_COPY.length)];
-  const { w, h, label } = dims[variant];
+  // Deterministic ad pick per slot/variant so it doesn't re-roll on re-render
+  const ad = useMemo(() => ADS[Math.abs(((_slot ?? variant).charCodeAt(0) ?? 0) % ADS.length)], [_slot, variant]);
 
   if (dismissed) return null;
 
+  const isVertical = variant === "sidebar";
+
   return (
-    <div className={`${w} ${h} ${className} relative overflow-hidden rounded-xl border border-zinc-800 flex items-center`}>
-      {/* Ad content */}
-      <div className={`absolute inset-0 bg-gradient-to-r ${ad.color} opacity-10`} />
-      <div className="relative flex items-center justify-between w-full px-5 gap-4">
-        <div className="flex items-center gap-4 min-w-0">
-          <span className="text-[9px] font-black text-zinc-600 uppercase tracking-widest shrink-0 border border-zinc-700 px-1.5 py-0.5 rounded">Ad</span>
-          <div className="min-w-0">
-            <p className="text-sm font-black text-white truncate">{ad.headline}</p>
-            {variant !== "banner" && (
-              <p className="text-xs text-zinc-500 truncate">{ad.sub}</p>
-            )}
+    <div
+      className={cn(
+        "relative w-full overflow-hidden rounded-xl",
+        HEIGHTS[variant],
+        className
+      )}
+      style={{ background: "var(--bg-surface)", border: "1px solid var(--border-subtle)" }}
+      aria-label="Advertisement"
+    >
+      {/* Gradient accent strip */}
+      <div
+        className="absolute inset-y-0 left-0 w-1 rounded-l-xl"
+        style={{ background: `linear-gradient(to bottom, ${ad.gradient})` }}
+      />
+
+      <div className={cn("flex h-full px-4 pl-5 gap-4", isVertical ? "flex-col justify-center items-start py-5" : "items-center justify-between")}>
+        {/* Left: label + content */}
+        <div className={cn("flex items-center gap-3 min-w-0", isVertical ? "flex-col items-start" : "")}>
+          {/* Ad label */}
+          <span
+            className="shrink-0 text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded"
+            style={{ background: "var(--bg-overlay)", color: "var(--text-muted)" }}
+          >
+            Ad
+          </span>
+
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div
+              className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
+              style={{ background: `linear-gradient(135deg, ${ad.gradient})` }}
+            >
+              <ad.Icon size={13} color="white" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-bold truncate" style={{ color: "var(--text-primary)" }}>
+                {ad.headline}
+              </p>
+              {(variant !== "banner") && (
+                <p className="text-xs truncate mt-0.5" style={{ color: "var(--text-secondary)" }}>
+                  {ad.sub}
+                </p>
+              )}
+            </div>
           </div>
         </div>
-        <div className="flex items-center gap-3 shrink-0">
-          <a href="#" className={`text-xs font-black px-4 py-2 rounded-lg bg-gradient-to-r ${ad.color} text-white whitespace-nowrap hover:opacity-90 transition-opacity`}>
+
+        {/* Right: CTA + dismiss */}
+        <div className={cn("flex items-center gap-2 shrink-0", isVertical ? "w-full" : "")}>
+          <a
+            href="#"
+            className={cn(
+              "px-4 py-1.5 rounded-lg text-xs font-bold text-white transition-all hover:opacity-90 whitespace-nowrap",
+              isVertical && "flex-1 text-center"
+            )}
+            style={{ background: `linear-gradient(135deg, ${ad.gradient})` }}
+          >
             {ad.cta}
           </a>
           <button
             onClick={() => setDismissed(true)}
-            className="p-1.5 text-zinc-700 hover:text-zinc-400 transition-colors rounded-lg hover:bg-white/5"
-            title="Close ad"
+            className="w-6 h-6 rounded flex items-center justify-center transition-colors hover:bg-white/10"
+            style={{ color: "var(--text-muted)" }}
+            aria-label="Close ad"
           >
-            <X className="w-3.5 h-3.5" />
+            <X size={12} />
           </button>
         </div>
       </div>
-      {/* Size label (dev mode) */}
-      {process.env.NODE_ENV === "development" && (
-        <span className="absolute bottom-1 right-2 text-[8px] text-zinc-700 font-mono">{label}</span>
-      )}
     </div>
   );
 }

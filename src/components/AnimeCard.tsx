@@ -7,11 +7,13 @@ import { useLanguage } from "@/context/LanguageContext";
 import { useWatchlist } from "@/context/WatchlistContext";
 import { useSubscription } from "@/context/SubscriptionContext";
 import { Anime } from "@/data/anime";
-import { cn } from "@/lib/cn";
 
 interface AnimeCardProps {
   anime: Anime;
 }
+
+const CARD_W = 160;
+const CARD_H = Math.round(CARD_W * 1.45); // ~2:3 ratio = 232px
 
 export default function AnimeCard({ anime }: AnimeCardProps) {
   const { language } = useLanguage();
@@ -21,8 +23,14 @@ export default function AnimeCard({ anime }: AnimeCardProps) {
   const [imgError, setImgError] = useState(false);
 
   const isAdded  = isInWatchlist(anime.id);
-  const isLocked = anime.tags.includes("New Release") && !isPremium;
-  const title    = anime.title?.[language] ?? anime.title?.English ?? anime.title?.Romaji ?? "";
+  const isLocked = anime.tags?.includes("New Release") && !isPremium;
+
+  // Safe title access — language context returns "English"|"Japanese"|"Chinese"
+  const rawTitle = anime.title;
+  const title =
+    (rawTitle && typeof rawTitle === "object"
+      ? rawTitle[language as keyof typeof rawTitle] ?? rawTitle.English ?? rawTitle.Romaji
+      : null) ?? String(anime.id);
 
   const handleWatchlistToggle = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -34,12 +42,9 @@ export default function AnimeCard({ anime }: AnimeCardProps) {
     if (isLocked) { e.preventDefault(); openModal(); }
   };
 
-  // Card dimensions: fixed width for row layout
-  const CARD_W = 160;
-
   return (
     <div
-      className="relative shrink-0"
+      className="relative"
       style={{
         width: CARD_W,
         zIndex: hovered ? 40 : "auto",
@@ -49,29 +54,23 @@ export default function AnimeCard({ anime }: AnimeCardProps) {
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      <Link href={`/watch/${anime.id}`} onClick={handleClick}>
+      <Link href={`/watch/${anime.id}`} onClick={handleClick} aria-label={`Watch ${title}`}>
         {/* Poster */}
         <div
           className="relative overflow-hidden rounded-xl"
           style={{
             width: CARD_W,
-            height: Math.round(CARD_W * 1.45), // ~2:3 ratio
-            background: anime.color
-              ? `${anime.color}22`
-              : "var(--bg-elevated)",
+            height: CARD_H,
+            background: anime.color ? `${anime.color}22` : "var(--bg-elevated)",
           }}
         >
-          {!imgError ? (
+          {!imgError && anime.image ? (
             <img
               src={anime.image}
               alt={title}
               className="w-full h-full object-cover"
               style={{
-                filter: isLocked
-                  ? "brightness(0.2) grayscale(0.3)"
-                  : hovered
-                  ? "brightness(0.5)"
-                  : "brightness(1)",
+                filter: isLocked ? "brightness(0.2)" : hovered ? "brightness(0.45)" : "brightness(1)",
                 transition: "filter 0.3s ease",
               }}
               loading="lazy"
@@ -80,39 +79,37 @@ export default function AnimeCard({ anime }: AnimeCardProps) {
             />
           ) : (
             <div
-              className="w-full h-full flex items-center justify-center text-xs font-semibold text-center px-2"
-              style={{ color: "var(--text-muted)", background: "var(--bg-elevated)" }}
+              className="w-full h-full flex items-center justify-center px-2 text-center"
+              style={{ background: "var(--bg-elevated)", color: "var(--text-muted)", fontSize: 11 }}
             >
               {title}
             </div>
           )}
 
-          {/* Rating badge */}
-          {!isLocked && anime.rating !== "N/A" && (
+          {/* Rating */}
+          {!isLocked && anime.rating && anime.rating !== "N/A" && (
             <div
-              className="absolute top-2 right-2 flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[10px] font-bold"
-              style={{ background: "rgba(0,0,0,0.75)", color: "white", backdropFilter: "blur(4px)" }}
+              className="absolute top-1.5 right-1.5 flex items-center gap-0.5 px-1.5 py-0.5 rounded-md"
+              style={{ background: "rgba(0,0,0,0.72)", backdropFilter: "blur(4px)" }}
             >
               <Star size={9} fill="#f59e0b" color="#f59e0b" />
-              {anime.rating}
+              <span className="text-[10px] font-bold text-white">{anime.rating}</span>
             </div>
           )}
 
-          {/* New badge */}
+          {/* Airing badge */}
           {anime.status === "RELEASING" && (
-            <div className="absolute top-2 left-2">
-              <span
-                className="text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider text-white"
-                style={{ background: "var(--brand-primary)" }}
-              >
+            <div className="absolute top-1.5 left-1.5">
+              <span className="text-[8px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider text-white"
+                style={{ background: "var(--brand-primary)" }}>
                 Airing
               </span>
             </div>
           )}
 
-          {/* Lock */}
+          {/* Lock overlay */}
           {isLocked && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 p-3 text-center">
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5">
               <Lock size={20} color="white" />
               <p className="text-white text-[9px] font-bold uppercase tracking-widest">Premium</p>
             </div>
@@ -121,22 +118,21 @@ export default function AnimeCard({ anime }: AnimeCardProps) {
           {/* Hover overlay */}
           {!isLocked && (
             <div
-              className={cn("absolute inset-0 flex flex-col items-center justify-center gap-2")}
+              className="absolute inset-0 flex flex-col items-center justify-center gap-2.5"
               style={{
                 opacity: hovered ? 1 : 0,
                 transition: "opacity 0.2s ease",
-                background:
-                  "linear-gradient(to top, rgba(3,7,18,0.96) 0%, rgba(3,7,18,0.5) 55%, transparent 100%)",
+                background: "linear-gradient(to top, rgba(3,7,18,0.97) 0%, rgba(3,7,18,0.5) 55%, transparent 100%)",
               }}
             >
               {/* Play button */}
               <button
                 className="w-11 h-11 rounded-full flex items-center justify-center transition-transform hover:scale-110"
                 style={{
-                  background:
-                    "linear-gradient(135deg, var(--brand-primary), var(--brand-accent))",
-                  boxShadow: "0 4px 20px rgba(59,130,246,0.4)",
+                  background: "linear-gradient(135deg, var(--brand-primary), var(--brand-accent))",
+                  boxShadow: "0 4px 20px rgba(59,130,246,0.45)",
                 }}
+                aria-label={`Play ${title}`}
               >
                 <Play size={17} fill="white" color="white" />
               </button>
@@ -151,6 +147,7 @@ export default function AnimeCard({ anime }: AnimeCardProps) {
                   border: `1px solid ${isAdded ? "rgba(34,197,94,0.4)" : "rgba(255,255,255,0.2)"}`,
                   backdropFilter: "blur(8px)",
                 }}
+                aria-label={isAdded ? "Remove from watchlist" : "Add to watchlist"}
               >
                 {isAdded ? <Check size={10} /> : <Plus size={10} />}
                 {isAdded ? "Saved" : "Save"}
@@ -159,30 +156,28 @@ export default function AnimeCard({ anime }: AnimeCardProps) {
           )}
         </div>
 
-        {/* Card info below poster */}
+        {/* Card info */}
         <div className="mt-2 px-0.5" style={{ width: CARD_W }}>
           <p
             className="text-sm font-semibold leading-tight"
             style={{
               color: "var(--text-primary)",
-              overflow: "hidden",
               display: "-webkit-box",
               WebkitLineClamp: 2,
               WebkitBoxOrient: "vertical",
+              overflow: "hidden",
             }}
           >
             {title}
           </p>
           <div className="flex items-center gap-1.5 mt-1">
-            <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>
-              {anime.year}
-            </span>
+            {anime.year && (
+              <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>{anime.year}</span>
+            )}
             {anime.episodes > 0 && (
               <>
-                <span style={{ color: "var(--border-strong)" }}>·</span>
-                <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>
-                  {anime.episodes} ep
-                </span>
+                <span style={{ color: "var(--border-strong)", fontSize: 8 }}>•</span>
+                <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>{anime.episodes} ep</span>
               </>
             )}
           </div>

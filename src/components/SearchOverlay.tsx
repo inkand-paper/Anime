@@ -1,150 +1,209 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
-import { useLanguage } from "@/context/LanguageContext";
-import { Anime } from "@/data/anime";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
-import { Loader2, Search, X, ChevronRight } from "lucide-react";
+import { useLanguage } from "@/context/LanguageContext";
+import { Search, X, Loader2, Star, ChevronRight } from "lucide-react";
+import { Anime } from "@/data/anime";
 
-interface SearchOverlayProps { isOpen: boolean; onClose: () => void; }
+interface SearchOverlayProps {
+  isOpen: boolean;
+  onClose: () => void;
+}
 
 export default function SearchOverlay({ isOpen, onClose }: SearchOverlayProps) {
   const { language } = useLanguage();
-  const [query, setQuery] = useState("");
+  const [query, setQuery]     = useState("");
   const [results, setResults] = useState<Anime[]>([]);
   const [loading, setLoading] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef              = useRef<HTMLInputElement>(null);
+  const abortRef              = useRef<AbortController | null>(null);
 
   useEffect(() => {
     if (isOpen) {
       setTimeout(() => inputRef.current?.focus(), 80);
       document.body.style.overflow = "hidden";
     } else {
-      document.body.style.overflow = "unset";
+      document.body.style.overflow = "";
       setQuery("");
       setResults([]);
-      setLoading(false);
     }
+    return () => { document.body.style.overflow = ""; };
   }, [isOpen]);
 
-  // Live search with API
+  // Escape closes
   useEffect(() => {
-    if (!query.trim()) { 
-      setResults([]); 
-      setLoading(false);
-      return; 
-    }
+    const fn = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", fn);
+    return () => document.removeEventListener("keydown", fn);
+  }, [onClose]);
+
+  // Live search — debounced 300ms
+  const doSearch = useCallback(async (q: string) => {
+    abortRef.current?.abort();
+    if (!q.trim()) { setResults([]); setLoading(false); return; }
 
     const controller = new AbortController();
-    const timeout = setTimeout(async () => {
-      setLoading(true);
-      try {
-        const res = await fetch(`/api/anime/search?q=${encodeURIComponent(query)}`, {
-          signal: controller.signal
-        });
-        const data = await res.json();
-        if (data.results) {
-          // Map results to UI shape if needed (though API should return correct shape)
-          setResults(data.results.map((r: any) => ({
-            id: r.id,
-            title: typeof r.title === 'string' ? { English: r.title, Japanese: r.title, Chinese: r.title } : r.title,
-            image: r.image,
-            banner: r.banner || r.image,
-            rating: String(r.rating || "N/A"),
-            year: r.year || "—",
-            episodes: r.totalEpisodes || r.episodes || 0,
-            tags: r.genres || r.tags || [],
-            description: r.description || ""
-          })));
-        }
-      } catch (err: any) {
-        if (err.name !== 'AbortError') console.error("Search error:", err);
-      } finally {
-        setLoading(false);
-      }
-    }, 500);
+    abortRef.current = controller;
+    setLoading(true);
 
-    return () => {
-      clearTimeout(timeout);
-      controller.abort();
-    };
-  }, [query]);
+    try {
+      const res = await fetch(`/api/anime/search?q=${encodeURIComponent(q)}&perPage=8`, {
+        signal: controller.signal,
+      });
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+
+      // Normalize shape — API returns normalizeAnime() output
+      const items: Anime[] = (data.results ?? []).map((r: Anime) => ({
+        ...r,
+        title: typeof r.title === "string"
+          ? { English: r.title, Japanese: r.title, Chinese: r.title, Romaji: r.title }
+          : r.title,
+      }));
+      setResults(items);
+    } catch (e: unknown) {
+      if ((e as Error).name !== "AbortError") setResults([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    const handleKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    document.addEventListener("keydown", handleKey);
-    return () => document.removeEventListener("keydown", handleKey);
-  }, [onClose]);
+    const timer = setTimeout(() => doSearch(query), 300);
+    return () => clearTimeout(timer);
+  }, [query, doSearch]);
 
   if (!isOpen) return null;
 
-  return (
-    <div className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-md animate-in fade-in duration-300">
-      <div className="container mx-auto px-6 pt-24 max-w-4xl">
+  const getTitle = (anime: Anime) => {
+    const t = anime.title;
+    if (!t || typeof t !== "object") return String(anime.id);
+    return t[language as keyof typeof t] ?? t.English ?? t.Romaji ?? String(anime.id);
+  };
 
-        {/* Search input */}
-        <div className="flex items-center gap-4 border-b-2 border-zinc-800 pb-4">
-          <Search className="w-7 h-7 text-zinc-500 flex-shrink-0" />
+  return (
+    <div
+      className="fixed inset-0 z-[200]"
+      style={{ background: "rgba(3,7,18,0.94)", backdropFilter: "blur(16px)" }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="container mx-auto px-4 sm:px-6 pt-20 max-w-3xl">
+
+        {/* Input */}
+        <div
+          className="flex items-center gap-3 px-4 py-3 rounded-2xl mb-4"
+          style={{ background: "var(--bg-surface)", border: "1px solid var(--border-default)" }}
+        >
+          {loading
+            ? <Loader2 size={20} className="animate-spin shrink-0" style={{ color: "var(--text-muted)" }} />
+            : <Search size={20} className="shrink-0" style={{ color: "var(--text-muted)" }} />}
           <input
             ref={inputRef}
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search anime..."
-            className="w-full bg-transparent text-2xl lg:text-3xl font-bold text-white outline-none placeholder:text-zinc-700"
+            placeholder="Search anime by title, genre..."
+            className="flex-1 bg-transparent text-lg font-medium outline-none"
+            style={{ color: "var(--text-primary)" }}
+            aria-label="Search anime"
           />
-          {loading && <Loader2 className="w-6 h-6 text-blue-500 animate-spin" />}
-          {query && !loading && (
-            <button onClick={() => setQuery("")} className="text-zinc-500 hover:text-white transition-colors flex-shrink-0">
-              <X className="w-6 h-6" />
+          <div className="flex items-center gap-2 shrink-0">
+            {query && (
+              <button onClick={() => setQuery("")} className="transition-colors hover:text-white" style={{ color: "var(--text-muted)" }} aria-label="Clear">
+                <X size={16} />
+              </button>
+            )}
+            <button onClick={onClose}
+              className="px-3 py-1 rounded-lg text-xs font-semibold transition-colors hover:bg-white/10"
+              style={{ color: "var(--text-muted)", border: "1px solid var(--border-subtle)" }}>
+              Esc
             </button>
-          )}
-          <button onClick={onClose} className="ml-4 p-2 hover:bg-zinc-800 rounded-full transition-colors text-zinc-400 flex-shrink-0">
-             <X className="w-7 h-7" />
-          </button>
+          </div>
         </div>
 
-        <div className="mt-8 overflow-y-auto max-h-[70vh] pr-4 custom-scrollbar">
-          {results.length > 0 ? (
-            <div className="space-y-2">
-              <p className="text-zinc-500 font-bold uppercase tracking-widest text-xs mb-4">
-                Found {results.length} result{results.length !== 1 ? "s" : ""}
-              </p>
-              {results.map((anime) => (
-                <Link
-                  key={anime.id}
-                  href={`/watch/${anime.id}`}
-                  onClick={onClose}
-                  className="flex items-center gap-5 p-4 rounded-2xl hover:bg-zinc-900 transition-colors group border border-transparent hover:border-white/5"
-                >
-                  <img src={anime.image} alt="" className="w-16 h-22 object-cover rounded-xl shadow-lg flex-shrink-0" style={{ height: "5.5rem" }} />
-                  <div className="flex-grow min-w-0">
-                    <h3 className="text-lg font-bold text-white group-hover:text-blue-400 transition-colors truncate">
-                      {anime.title[language]}
-                    </h3>
-                    <div className="flex items-center gap-3 text-xs text-zinc-500 mt-1">
-                      <span className="text-emerald-400 font-bold">★ {anime.rating}</span>
-                      <span>•</span>
-                      <span>{anime.year}</span>
-                      <span>•</span>
-                      <span>{anime.episodes} EP</span>
-                    </div>
+        {/* Results */}
+        {results.length > 0 ? (
+          <div
+            className="rounded-2xl overflow-hidden"
+            style={{ background: "var(--bg-surface)", border: "1px solid var(--border-subtle)" }}
+          >
+            {results.map((anime, i) => (
+              <Link
+                key={anime.id}
+                href={`/watch/${anime.id}`}
+                onClick={onClose}
+                className="flex items-center gap-4 px-4 py-3 transition-colors hover:bg-white/5 group"
+                style={{ borderTop: i > 0 ? "1px solid var(--border-subtle)" : "none" }}
+              >
+                {/* Thumbnail */}
+                <div className="w-10 h-14 rounded-lg overflow-hidden shrink-0" style={{ background: "var(--bg-elevated)" }}>
+                  {anime.image && (
+                    <img src={anime.image} alt="" className="w-full h-full object-cover" loading="lazy" />
+                  )}
+                </div>
+
+                {/* Info */}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold truncate group-hover:text-white transition-colors" style={{ color: "var(--text-primary)" }}>
+                    {getTitle(anime)}
+                  </p>
+                  <div className="flex items-center gap-2 mt-0.5" style={{ color: "var(--text-muted)" }}>
+                    {anime.rating && anime.rating !== "N/A" && (
+                      <span className="flex items-center gap-0.5 text-xs">
+                        <Star size={10} fill="#f59e0b" color="#f59e0b" />
+                        {anime.rating}
+                      </span>
+                    )}
+                    {anime.year && <span className="text-xs">{anime.year}</span>}
+                    {anime.episodes > 0 && <span className="text-xs">{anime.episodes} ep</span>}
                   </div>
-                  <ChevronRight className="w-5 h-5 text-zinc-600 group-hover:text-blue-400 transition-colors flex-shrink-0" />
-                </Link>
-              ))}
-            </div>
-          ) : query && !loading ? (
-            <div className="text-center py-20">
-              <p className="text-zinc-500 text-xl font-medium">No results for &ldquo;{query}&rdquo;</p>
-              <p className="text-zinc-700 text-sm mt-2">Try a different title or genre</p>
-            </div>
-          ) : !query && (
-            <div className="py-20 text-center">
-              <p className="text-zinc-700 font-black text-xs uppercase tracking-[0.4em]">Type to Search the Multiverse</p>
-            </div>
-          )}
-        </div>
+                </div>
+
+                {/* Tags */}
+                <div className="hidden sm:flex items-center gap-1.5 shrink-0">
+                  {anime.tags?.slice(0, 2).map((tag) => (
+                    <span key={tag} className="text-[10px] px-2 py-0.5 rounded"
+                      style={{ background: "var(--bg-elevated)", color: "var(--text-muted)" }}>
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+
+                <ChevronRight size={14} className="shrink-0 transition-colors group-hover:text-white" style={{ color: "var(--text-muted)" }} />
+              </Link>
+            ))}
+
+            {/* View all results link */}
+            {query.trim() && (
+              <Link
+                href={`/browse?q=${encodeURIComponent(query)}`}
+                onClick={onClose}
+                className="flex items-center justify-center gap-2 py-3 text-sm font-semibold transition-colors hover:bg-white/5"
+                style={{
+                  color: "var(--brand-primary)",
+                  borderTop: "1px solid var(--border-subtle)",
+                }}
+              >
+                View all results for &ldquo;{query}&rdquo;
+                <ChevronRight size={14} />
+              </Link>
+            )}
+          </div>
+        ) : query && !loading ? (
+          <div className="text-center py-16">
+            <p className="font-semibold" style={{ color: "var(--text-secondary)" }}>
+              No results for &ldquo;{query}&rdquo;
+            </p>
+            <p className="text-sm mt-1" style={{ color: "var(--text-muted)" }}>Try a different search term</p>
+          </div>
+        ) : !query ? (
+          <div className="text-center py-12">
+            <p className="text-sm" style={{ color: "var(--text-muted)" }}>
+              Start typing to search 10,000+ anime titles
+            </p>
+          </div>
+        ) : null}
       </div>
     </div>
   );
