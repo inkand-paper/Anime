@@ -8,6 +8,11 @@ import { NextRequest, NextResponse } from "next/server";
  */
 
 const ALLOWED_HOSTS = [
+  "allanime.day",
+  "api.allanime.day",
+  "vidsrc.cc",
+  "api.gogoanime.cc",
+  "animeplay.icu",
   "aniwatch.to",
   "hianime.to",
   "megacloud.tv",
@@ -55,13 +60,16 @@ function rewriteM3U8(content: string, originalUrl: string, proxyBase: string): s
 
 export async function GET(req: NextRequest) {
   const url     = req.nextUrl.searchParams.get("url");
-  const referer = req.nextUrl.searchParams.get("referer") ?? "https://hianime.to/";
+  
+  // Set fallback headers to match standard authorized consumer domains
+  const referer = req.nextUrl.searchParams.get("referer") ?? "https://anilist.co/";
 
   if (!url) {
     return new NextResponse("url parameter required", { status: 400 });
   }
 
   if (!isAllowedHost(url)) {
+    console.warn(`[video-proxy] Blocked connection attempt to unlisted host: ${new URL(url).hostname}`);
     return new NextResponse("Host not allowed", { status: 403 });
   }
 
@@ -70,8 +78,8 @@ export async function GET(req: NextRequest) {
       headers: {
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        Referer: referer,
-        Origin: new URL(referer).origin,
+        "Referer": referer,
+        "Origin": referer.startsWith("http") ? new URL(referer).origin : "https://anilist.co",
       },
       signal: AbortSignal.timeout(15_000),
     });

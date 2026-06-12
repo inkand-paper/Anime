@@ -56,14 +56,25 @@ export default function VideoPlayer({ sources, title, episode, onAdComplete, onN
   const hlsRef = useRef<Hls | null>(null);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const currentSource = sources[sourceIndex];
+  const currentSource = sources && sources.length > 0 ? sources[sourceIndex] : null;
+  
+  // Resiliently detect if it's a web embed layout
+  const isEmbed = !!(
+    currentSource?.type === "iframe" || 
+    currentSource?.type === "embed" || 
+    currentSource?.url?.includes("embed") || 
+    currentSource?.url?.includes("v2") ||
+    currentSource?.url?.includes("icu") ||
+    currentSource?.url?.includes("cc")
+  );
 
-  // Initialize HLS
+  // Initialize HLS — Only fires for real video files (.m3u8 / .mp4)
   const initPlayer = useCallback(() => {
-    if (!videoRef.current || !currentSource || currentSource.type === "iframe") return;
+    if (!videoRef.current || !currentSource || isEmbed) return;
 
     if (hlsRef.current) {
       hlsRef.current.destroy();
+      hlsRef.current = null;
     }
 
     if (currentSource.type === "hls") {
@@ -76,7 +87,7 @@ export default function VideoPlayer({ sources, title, episode, onAdComplete, onN
         hls.loadSource(proxiedUrl);
         hls.attachMedia(videoRef.current);
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
-          if (!adPlaying && !midRollPlaying) videoRef.current?.play();
+          if (!adPlaying && !midRollPlaying) videoRef.current?.play().catch(() => {});
         });
         hls.on(Hls.Events.ERROR, (_, data) => {
           if (data.fatal) handleError();
@@ -88,33 +99,24 @@ export default function VideoPlayer({ sources, title, episode, onAdComplete, onN
     } else {
       videoRef.current.src = currentSource.url;
     }
-  }, [currentSource, adPlaying, midRollPlaying]);
+  }, [currentSource, adPlaying, midRollPlaying, isEmbed]);
 
+  // Clean lifecycle hook management — Completely removed the crashing 10s watchdog loop
   useEffect(() => {
-    // Reset states when switching sources
     setBuffering(false);
     setHasError(false);
 
-    if (!adPlaying && !midRollPlaying) {
+    if (!adPlaying && !midRollPlaying && !isEmbed) {
       initPlayer();
-    }
-    
-    // Watchdog for iframes (standard onError doesn't reliably trigger for iframes)
-    let iframeTimeout: ReturnType<typeof setTimeout>;
-    if (currentSource?.type === "iframe" && !adPlaying && !midRollPlaying) {
-      // For iframes, we assume it's loading successfully unless reported
-      setBuffering(false); 
-      
-      iframeTimeout = setTimeout(() => {
-        // Watchdog logic...
-      }, 10000);
     }
 
     return () => {
-      if (hlsRef.current) hlsRef.current.destroy();
-      if (iframeTimeout) clearTimeout(iframeTimeout);
+      if (hlsRef.current) {
+        hlsRef.current.destroy();
+        hlsRef.current = null;
+      }
     };
-  }, [initPlayer, adPlaying, midRollPlaying, currentSource]);
+  }, [initPlayer, adPlaying, midRollPlaying, isEmbed]);
 
   // Pre-roll countdown
   useEffect(() => {
@@ -160,7 +162,7 @@ export default function VideoPlayer({ sources, title, episode, onAdComplete, onN
   const togglePlay = () => {
     if (!videoRef.current) return;
     if (isPlaying) { videoRef.current.pause(); }
-    else { videoRef.current.play(); }
+    else { videoRef.current.play().catch(() => {}); }
   };
 
   const handleTimeUpdate = () => {
@@ -228,26 +230,26 @@ export default function VideoPlayer({ sources, title, episode, onAdComplete, onN
       onMouseMove={resetHideTimer}
     >
       {/* Loading/Buffering overlay */}
-      {(buffering || (sourceIndex > 0 && hasError)) && !allFailed && (
+      {(buffering || (sourceIndex > 0 && hasError) || !currentSource) && !allFailed && (
         <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <div className="flex flex-col items-center gap-4">
             <Loader2 className="w-10 h-10 text-blue-500 animate-spin" />
             <p className="text-white font-black text-xs uppercase tracking-[0.2em] animate-pulse">
-              {hasError ? "Switching Source..." : "Buffering..."}
+              {!currentSource ? "Resolving Stream Node..." : hasError ? "Switching Source..." : "Buffering..."}
             </p>
           </div>
         </div>
       )}
 
-      {/* Main content: iframe or video */}
-      {currentSource?.type === "iframe" && !adPlaying && !midRollPlaying ? (
+      {/* Main Content Viewport */}
+      {currentSource && isEmbed && !adPlaying && !midRollPlaying ? (
         <iframe
           src={currentSource.url}
-          className="w-full h-full border-0"
+          className="w-full h-full border-0 absolute inset-0 bg-black z-10"
           allowFullScreen
-          allow="autoplay; encrypted-media"
-          referrerPolicy="unsafe-url"
-          title={`${title} - Episode ${episode}`}
+          allow="autoplay; encrypted-media; picture-in-picture"
+          referrerPolicy="no-referrer"
+          title={`${title || "Anime"} - Episode ${episode || 1}`}
         />
       ) : (
         <video
@@ -313,8 +315,8 @@ export default function VideoPlayer({ sources, title, episode, onAdComplete, onN
         </div>
       )}
 
-      {/* Custom UI: Video only */}
-      {currentSource?.type !== "iframe" && !adPlaying && !midRollPlaying && (
+      {/* UI Overlay Controls: Visible only for file streams */}
+      {!isEmbed && currentSource && !adPlaying && !midRollPlaying && (
         <>
           {/* Top Info */}
           <div 
@@ -323,7 +325,9 @@ export default function VideoPlayer({ sources, title, episode, onAdComplete, onN
           >
             <div className="space-y-1">
               <h3 className="text-xl font-black text-white tracking-tighter uppercase">{title}</h3>
-              <p className="text-[10px] font-black text-blue-500 uppercase tracking-[0.3em]">Episode {episode} • {currentSource.label}</p>
+              <p className="text-[10px] font-black text-blue-500 uppercase tracking-[0.3em]">
+                Episode {episode} • {currentSource?.label || "Primary Stream"}
+              </p>
             </div>
             
             <div className="flex gap-2">
@@ -405,22 +409,22 @@ export default function VideoPlayer({ sources, title, episode, onAdComplete, onN
         </>
       )}
 
-      {/* Host Switcher (iframes) */}
-      {currentSource?.type === "iframe" && !adPlaying && !midRollPlaying && (
-        <div className="absolute top-8 left-8 z-20 flex flex-wrap gap-2 group/hosts">
-          <div className="flex items-center gap-3 bg-black/40 backdrop-blur-3xl border border-white/5 p-3 rounded-2xl opacity-50 group-hover/hosts:opacity-100 transition-all duration-300">
+      {/* Embed Server Switcher HUD — Always visible for active iframes */}
+      {isEmbed && !adPlaying && !midRollPlaying && (
+        <div className="absolute top-8 left-8 z-30 flex flex-wrap gap-2 group/hosts">
+          <div className="flex items-center gap-3 bg-black/70 backdrop-blur-3xl border border-white/10 p-3 rounded-2xl opacity-40 hover:opacity-100 group-hover/hosts:opacity-100 transition-all duration-300">
             <div className="flex items-center gap-2 px-2 border-r border-white/10 mr-2">
               <Zap className="w-3.5 h-3.5 text-blue-500 fill-blue-500" />
-              <span className="text-[10px] font-black text-white/50 uppercase tracking-widest leading-none">Servers</span>
+              <span className="text-[10px] font-black text-white/50 uppercase tracking-widest leading-none">Sources</span>
             </div>
             {sources.map((s, i) => (
               <button
                 key={i}
                 onClick={() => { setSourceIndex(i); setHasError(false); setAllFailed(false); }}
                 className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all
-                  ${i === sourceIndex ? "bg-blue-600 text-white" : "bg-white/5 text-zinc-500 hover:text-white"}`}
+                  ${i === sourceIndex ? "bg-blue-600 text-white" : "bg-white/5 text-zinc-400 hover:text-white"}`}
               >
-                {s.label}
+                {s.label || `Mirror ${i + 1}`}
               </button>
             ))}
           </div>
