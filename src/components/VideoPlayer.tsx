@@ -2,431 +2,614 @@
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import Hls from "hls.js";
-import { VideoSource } from "@/lib/video-resolver";
-import { 
-  Play, 
-  Pause, 
-  SkipForward, 
-  Volume2, 
-  VolumeX, 
-  Maximize, 
-  Minimize, 
-  RotateCcw,
-  Settings,
-  Info,
-  Zap,
-  AlertCircle,
-  Loader2
+import {
+  Play, Pause, SkipForward, Volume2, VolumeX,
+  Maximize, Minimize, RotateCcw, Settings, AlertCircle,
+  Loader2, Captions, CaptionsOff,
 } from "lucide-react";
+import { VideoSource } from "@/lib/video-resolver";
+import { cn } from "@/lib/cn";
 
 interface VideoPlayerProps {
   sources: VideoSource[];
   title?: string;
   episode?: number;
-  onAdComplete?: () => void;
   onNext?: () => void;
 }
 
-export default function VideoPlayer({ sources, title, episode, onAdComplete, onNext }: VideoPlayerProps) {
-  const [sourceIndex, setSourceIndex] = useState(0);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
-  const [volume, setVolume] = useState(1);
-  const [muted, setMuted] = useState(false);
-  const [showControls, setShowControls] = useState(true);
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const [hasError, setHasError] = useState(false);
-  const [allFailed, setAllFailed] = useState(false);
-  const [buffering, setBuffering] = useState(false);
+function fmtTime(s: number): string {
+  if (!isFinite(s) || isNaN(s) || s < 0) return "0:00";
+  const m = Math.floor(s / 60);
+  const sec = Math.floor(s % 60);
+  return `${m}:${String(sec).padStart(2, "0")}`;
+}
 
-  // Pre-roll ad state
-  const [adPlaying, setAdPlaying] = useState(false);
-  const [adTimer, setAdTimer] = useState(10);
+export default function VideoPlayer({
+  sources,
+  title,
+  episode,
+  onNext,
+}: VideoPlayerProps) {
+  const [srcIdx, setSrcIdx]           = useState(0);
+  const [isPlaying, setIsPlaying]     = useState(false);
+  const [buffering, setBuffering]     = useState(true);
+  const [progress, setProgress]       = useState(0);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration]       = useState(0);
+  const [volume, setVolume]           = useState(1);
+  const [muted, setMuted]             = useState(false);
+  const [showUI, setShowUI]           = useState(true);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [allFailed, setAllFailed]     = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [subsOn, setSubsOn]           = useState(true);
+
+  // Pre-roll ad
+  const [adActive, setAdActive]       = useState(false);
+  const [adTimer, setAdTimer]         = useState(5);
   const [adSkippable, setAdSkippable] = useState(false);
 
-  // Mid-roll ad
-  const [midRollShown, setMidRollShown] = useState(false);
-  const [midRollPlaying, setMidRollPlaying] = useState(false);
-  const [midRollTimer, setMidRollTimer] = useState(10);
+  // Mid-roll
+  const [midDone, setMidDone]         = useState(false);
+  const [midActive, setMidActive]     = useState(false);
+  const [midTimer, setMidTimer]       = useState(5);
 
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const videoRef     = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const hlsRef = useRef<Hls | null>(null);
-  const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hlsRef       = useRef<Hls | null>(null);
+  const progressRef  = useRef<HTMLDivElement>(null);
+  const hideRef      = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const currentSource = sources && sources.length > 0 ? sources[sourceIndex] : null;
-  
-  // Resiliently detect if it's a web embed layout
-  const isEmbed = !!(
-    currentSource?.type === "iframe" || 
-    currentSource?.type === "embed" || 
-    currentSource?.url?.includes("embed") || 
-    currentSource?.url?.includes("v2") ||
-    currentSource?.url?.includes("icu") ||
-    currentSource?.url?.includes("cc")
-  );
+  const src = sources[srcIdx] ?? null;
 
-  // Initialize HLS — Only fires for real video files (.m3u8 / .mp4)
-  const initPlayer = useCallback(() => {
-    if (!videoRef.current || !currentSource || isEmbed) return;
+  // ── Teardown HLS ──────────────────────────────────────────────────────────
+  const destroyHls = useCallback(() => {
+    hlsRef.current?.destroy();
+    hlsRef.current = null;
+  }, []);
 
-    if (hlsRef.current) {
-      hlsRef.current.destroy();
-      hlsRef.current = null;
-    }
+  // ── Init video source ─────────────────────────────────────────────────────
+  const initSource = useCallback(() => {
+    const vid = videoRef.current;
+    if (!vid || !src || src.type === "iframe") return;
 
-    if (currentSource.type === "hls") {
-      const proxiedUrl = `/api/proxy/video?url=${encodeURIComponent(currentSource.url)}`;
+    destroyHls();
+    setBuffering(true);
+    setIsPlaying(false);
+
+    if (src.type === "hls") {
+      // Route through our Next.js proxy so CORS / referer headers are handled
+      const proxyUrl =
+        `/api/proxy/video?url=${encodeURIComponent(src.url)}` +
+        `&referer=${encodeURIComponent("https://allanime.day/")}`;
+
       if (Hls.isSupported()) {
         const hls = new Hls({
           capLevelToPlayerSize: true,
           autoStartLoad: true,
+          maxBufferLength: 30,
+          backBufferLength: 30,
         });
-        hls.loadSource(proxiedUrl);
-        hls.attachMedia(videoRef.current);
-        hls.on(Hls.Events.MANIFEST_PARSED, () => {
-          if (!adPlaying && !midRollPlaying) videoRef.current?.play().catch(() => {});
+        hls.loadSource(proxyUrl);
+        hls.attachMedia(vid);
+        hls.once(Hls.Events.MANIFEST_PARSED, () => {
+          vid.play().catch(() => {});
         });
         hls.on(Hls.Events.ERROR, (_, data) => {
-          if (data.fatal) handleError();
+          if (data.fatal) {
+            console.warn(`[VideoPlayer] HLS fatal error on "${src.label}":`, data.type);
+            tryNext();
+          }
         });
         hlsRef.current = hls;
-      } else if (videoRef.current.canPlayType("application/vnd.apple.mpegurl")) {
-        videoRef.current.src = currentSource.url;
+      } else if (vid.canPlayType("application/vnd.apple.mpegurl")) {
+        // Safari: native HLS, no proxy needed for direct playback
+        vid.src = src.url;
+        vid.play().catch(() => {});
+      } else {
+        tryNext();
       }
     } else {
-      videoRef.current.src = currentSource.url;
+      // MP4 direct
+      vid.src = src.url;
+      vid.play().catch(() => {});
     }
-  }, [currentSource, adPlaying, midRollPlaying, isEmbed]);
+  }, [src, srcIdx]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Clean lifecycle hook management — Completely removed the crashing 10s watchdog loop
   useEffect(() => {
-    setBuffering(false);
-    setHasError(false);
+    if (!adActive && !midActive) initSource();
+    return destroyHls;
+  }, [initSource, adActive, midActive, destroyHls]);
 
-    if (!adPlaying && !midRollPlaying && !isEmbed) {
-      initPlayer();
-    }
-
-    return () => {
-      if (hlsRef.current) {
-        hlsRef.current.destroy();
-        hlsRef.current = null;
-      }
-    };
-  }, [initPlayer, adPlaying, midRollPlaying, isEmbed]);
-
-  // Pre-roll countdown
+  // ── Pre-roll countdown ────────────────────────────────────────────────────
   useEffect(() => {
-    if (!adPlaying) return;
-    if (adTimer <= 0) { setAdSkippable(true); return; }
-    const t = setInterval(() => setAdTimer((s) => s - 1), 1000);
+    if (!adActive) return;
+    const t = setInterval(() => {
+      setAdTimer((c) => {
+        if (c <= 1) { clearInterval(t); setAdSkippable(true); return 0; }
+        return c - 1;
+      });
+    }, 1000);
     return () => clearInterval(t);
-  }, [adPlaying, adTimer]);
+  }, [adActive]);
 
-  // Mid-roll countdown
+  // ── Mid-roll at 30 % ──────────────────────────────────────────────────────
   useEffect(() => {
-    if (!midRollPlaying) return;
-    if (midRollTimer <= 0) return;
-    const t = setInterval(() => setMidRollTimer((s) => s - 1), 1000);
-    return () => clearInterval(t);
-  }, [midRollPlaying, midRollTimer]);
-
-  // Mid-roll trigger at 40% progress
-  useEffect(() => {
-    if (!midRollShown && !adPlaying && progress >= 40 && progress < 41) {
-      setMidRollShown(true);
-      setMidRollPlaying(true);
-      setMidRollTimer(10);
-      if (videoRef.current) videoRef.current.pause();
+    if (!midDone && !adActive && progress >= 30 && duration > 0) {
+      setMidDone(true);
+      setMidActive(true);
+      setMidTimer(5);
+      videoRef.current?.pause();
     }
-  }, [progress, adPlaying, midRollShown]);
+  }, [progress, midDone, adActive, duration]);
 
-  const resetHideTimer = useCallback(() => {
-    setShowControls(true);
-    if (hideTimer.current) clearTimeout(hideTimer.current);
-    hideTimer.current = setTimeout(() => { if (isPlaying) setShowControls(false); }, 3000);
+  useEffect(() => {
+    if (!midActive) return;
+    const t = setInterval(() => {
+      setMidTimer((c) => {
+        if (c <= 1) { clearInterval(t); return 0; }
+        return c - 1;
+      });
+    }, 1000);
+    return () => clearInterval(t);
+  }, [midActive]);
+
+  // ── Auto-hide controls ────────────────────────────────────────────────────
+  const resetHide = useCallback(() => {
+    setShowUI(true);
+    if (hideRef.current) clearTimeout(hideRef.current);
+    if (isPlaying) {
+      hideRef.current = setTimeout(() => setShowUI(false), 3000);
+    }
   }, [isPlaying]);
 
-  const skipAd = () => {
-    setAdPlaying(false);
-    onAdComplete?.();
-  };
-
-  const skipMidRoll = () => {
-    setMidRollPlaying(false);
-  };
-
-  const togglePlay = () => {
-    if (!videoRef.current) return;
-    if (isPlaying) { videoRef.current.pause(); }
-    else { videoRef.current.play().catch(() => {}); }
-  };
-
-  const handleTimeUpdate = () => {
-    if (!videoRef.current) return;
-    const pct = (videoRef.current.currentTime / videoRef.current.duration) * 100;
-    setProgress(isNaN(pct) ? 0 : pct);
-    setCurrentTime(videoRef.current.currentTime);
-  };
-
-  const handleLoadedMeta = () => {
-    if (videoRef.current) setDuration(videoRef.current.duration);
-  };
-
-  const handleError = () => {
-    setHasError(true);
-    if (sourceIndex < sources.length - 1) {
-      setTimeout(() => { 
-        setSourceIndex((i) => i + 1); 
-        setHasError(false);
-      }, 1000);
+  // ── Fallback to next source ───────────────────────────────────────────────
+  const tryNext = useCallback(() => {
+    const next = srcIdx + 1;
+    if (next < sources.length) {
+      setSrcIdx(next);
     } else {
       setAllFailed(true);
     }
-  };
+  }, [srcIdx, sources.length]);
 
+  // ── Video events ──────────────────────────────────────────────────────────
+  const onTimeUpdate = () => {
+    const v = videoRef.current;
+    if (!v || !v.duration) return;
+    setCurrentTime(v.currentTime);
+    setProgress((v.currentTime / v.duration) * 100);
+  };
+  const onLoadedMeta = () => {
+    if (videoRef.current) setDuration(videoRef.current.duration);
+    setBuffering(false);
+  };
+  const onWaiting  = () => setBuffering(true);
+  const onPlaying  = () => { setIsPlaying(true); setBuffering(false); };
+  const onPause    = () => setIsPlaying(false);
+  const onError    = () => tryNext();
+  const onEnded    = () => { setIsPlaying(false); onNext?.(); };
+
+  // ── Seek ──────────────────────────────────────────────────────────────────
   const seek = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!videoRef.current || adPlaying || midRollPlaying) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const pct = (e.clientX - rect.left) / rect.width;
-    videoRef.current.currentTime = pct * videoRef.current.duration;
+    const v = videoRef.current;
+    if (!v || !progressRef.current) return;
+    const rect = progressRef.current.getBoundingClientRect();
+    const pct  = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    v.currentTime = pct * v.duration;
   };
 
+  // ── Volume ────────────────────────────────────────────────────────────────
+  const onVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = parseFloat(e.target.value);
+    if (videoRef.current) videoRef.current.volume = val;
+    setVolume(val);
+    setMuted(val === 0);
+  };
   const toggleMute = () => {
     if (!videoRef.current) return;
-    videoRef.current.muted = !muted;
-    setMuted(!muted);
+    const next = !muted;
+    videoRef.current.muted = next;
+    setMuted(next);
   };
 
+  // ── Play / pause ──────────────────────────────────────────────────────────
+  const togglePlay = () => {
+    const v = videoRef.current;
+    if (!v) return;
+    if (isPlaying) v.pause();
+    else v.play().catch(() => {});
+  };
+
+  // ── Fullscreen ────────────────────────────────────────────────────────────
   const toggleFullscreen = () => {
     if (!containerRef.current) return;
     if (!document.fullscreenElement) {
-      containerRef.current.requestFullscreen();
-      setIsFullscreen(true);
+      containerRef.current.requestFullscreen().then(() => setIsFullscreen(true));
     } else {
-      document.exitFullscreen();
-      setIsFullscreen(false);
+      document.exitFullscreen().then(() => setIsFullscreen(false));
     }
   };
+  useEffect(() => {
+    const fn = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", fn);
+    return () => document.removeEventListener("fullscreenchange", fn);
+  }, []);
 
-  const fmt = (s: number) => {
-    if (isNaN(s)) return "00:00";
-    const h = Math.floor(s / 3600);
-    const m = Math.floor((s % 3600) / 60);
-    const sec = Math.floor(s % 60);
-    if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
-    return `${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
-  };
+  // ── Keyboard shortcuts ────────────────────────────────────────────────────
+  useEffect(() => {
+    const fn = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (!containerRef.current) return;
+      switch (e.key) {
+        case " ":
+        case "k":
+          e.preventDefault();
+          togglePlay();
+          break;
+        case "f":
+          toggleFullscreen();
+          break;
+        case "m":
+          toggleMute();
+          break;
+        case "ArrowRight":
+          if (videoRef.current) videoRef.current.currentTime += 10;
+          break;
+        case "ArrowLeft":
+          if (videoRef.current) videoRef.current.currentTime -= 10;
+          break;
+      }
+    };
+    window.addEventListener("keydown", fn);
+    return () => window.removeEventListener("keydown", fn);
+  }, [isPlaying, muted]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const adVideo = "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4";
+  // ── Subtitle toggling via textTracks ──────────────────────────────────────
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    Array.from(v.textTracks).forEach((t) => {
+      t.mode = subsOn ? "showing" : "hidden";
+    });
+  }, [subsOn]);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  if (!src) return null;
 
   return (
     <div
       ref={containerRef}
-      className="relative w-full aspect-video bg-black rounded-[32px] overflow-hidden group shadow-2xl border border-white/5 select-none"
-      onMouseMove={resetHideTimer}
+      className="relative w-full bg-black select-none outline-none"
+      style={{ aspectRatio: "16/9" }}
+      onMouseMove={resetHide}
+      onMouseLeave={() => isPlaying && setShowUI(false)}
+      tabIndex={0}
+      aria-label={title ? `Video: ${title}` : "Video player"}
     >
-      {/* Loading/Buffering overlay */}
-      {(buffering || (sourceIndex > 0 && hasError) || !currentSource) && !allFailed && (
-        <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="flex flex-col items-center gap-4">
-            <Loader2 className="w-10 h-10 text-blue-500 animate-spin" />
-            <p className="text-white font-black text-xs uppercase tracking-[0.2em] animate-pulse">
-              {!currentSource ? "Resolving Stream Node..." : hasError ? "Switching Source..." : "Buffering..."}
-            </p>
-          </div>
+      {/* ── IFRAME embed ──────────────────────────────────────────────── */}
+      {src.type === "iframe" && !adActive && !midActive ? (
+        <iframe
+          key={src.url}
+          src={src.url}
+          className="absolute inset-0 w-full h-full border-0"
+          allowFullScreen
+          allow="autoplay; fullscreen; encrypted-media"
+          title={title ?? "Video"}
+        />
+      ) : (
+        /* ── HTML5 video ────────────────────────────────────────────── */
+        <video
+          ref={videoRef}
+          className="absolute inset-0 w-full h-full"
+          onTimeUpdate={onTimeUpdate}
+          onLoadedMetadata={onLoadedMeta}
+          onWaiting={onWaiting}
+          onPlaying={onPlaying}
+          onPause={onPause}
+          onError={onError}
+          onEnded={onEnded}
+          onClick={adActive || midActive ? undefined : togglePlay}
+          playsInline
+          crossOrigin="anonymous"
+          style={{ cursor: adActive || midActive ? "default" : "pointer" }}
+        >
+          {src.tracks?.map((t, i) => (
+            <track
+              key={i}
+              kind={t.kind as "subtitles" | "captions"}
+              src={t.file}
+              label={t.label ?? `Track ${i + 1}`}
+              default={i === 0}
+            />
+          ))}
+        </video>
+      )}
+
+      {/* ── Buffering spinner ────────────────────────────────────────── */}
+      {buffering && !allFailed && src.type !== "iframe" && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <Loader2 size={42} className="animate-spin" color="rgba(255,255,255,0.8)" />
         </div>
       )}
 
-      {/* Main Content Viewport */}
-      {currentSource && isEmbed && !adPlaying && !midRollPlaying ? (
-        <iframe
-          src={currentSource.url}
-          className="w-full h-full border-0 absolute inset-0 bg-black z-10"
-          allowFullScreen
-          allow="autoplay; encrypted-media; picture-in-picture"
-          referrerPolicy="no-referrer"
-          title={`${title || "Anime"} - Episode ${episode || 1}`}
-        />
-      ) : (
-        <video
-          ref={videoRef}
-          src={adPlaying || midRollPlaying ? adVideo : undefined}
-          className="w-full h-full object-contain cursor-pointer"
-          onClick={adPlaying || midRollPlaying ? undefined : togglePlay}
-          onTimeUpdate={handleTimeUpdate}
-          onLoadedMetadata={handleLoadedMeta}
-          onPlay={() => setIsPlaying(true)}
-          onPause={() => setIsPlaying(false)}
-          onWaiting={() => setBuffering(true)}
-          onPlaying={() => setBuffering(false)}
-          onError={handleError}
-          autoPlay
-          playsInline
-        />
-      )}
-
-      {/* Fail state */}
+      {/* ── All sources failed ───────────────────────────────────────── */}
       {allFailed && (
-        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-zinc-950 p-12 text-center">
-          <div className="w-20 h-20 bg-red-500/10 rounded-full flex items-center justify-center border border-red-500/20 mb-6">
-            <AlertCircle className="w-10 h-10 text-red-500" />
+        <div
+          className="absolute inset-0 flex flex-col items-center justify-center gap-5 text-center px-8"
+          style={{ background: "rgba(3,7,18,0.97)" }}
+        >
+          <AlertCircle size={40} style={{ color: "var(--brand-danger)" }} />
+          <div>
+            <p className="text-white font-bold text-lg mb-1">Playback failed</p>
+            <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
+              All {sources.length} source{sources.length !== 1 ? "s" : ""} failed:&nbsp;
+              {sources.map((s) => s.label).join(", ")}
+            </p>
           </div>
-          <h4 className="text-3xl font-black text-white mb-3 uppercase tracking-tighter">Transmission Failed</h4>
-          <p className="text-zinc-500 max-w-sm text-sm font-medium leading-relaxed mb-8">
-            All primary and redundant streaming nodes have failed to establish a connection.
-          </p>
-          <button 
-            onClick={() => { setSourceIndex(0); setAllFailed(false); setHasError(false); }}
-            className="px-10 py-4 bg-white text-black font-black rounded-2xl hover:bg-zinc-200 transition-all transform active:scale-95 uppercase tracking-widest text-xs"
+          <button
+            onClick={() => { setSrcIdx(0); setAllFailed(false); }}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-sm text-white transition-all hover:opacity-90"
+            style={{ background: "var(--bg-elevated)", border: "1px solid var(--border-default)" }}
           >
-            Re-establish Link
+            <RotateCcw size={14} />
+            Retry
           </button>
         </div>
       )}
 
-      {/* Ad Overlays */}
-      {(adPlaying || midRollPlaying) && (
-        <div className="absolute inset-0 z-30 pointer-events-none">
-          <div className="absolute top-8 left-8 flex items-center gap-3 bg-black/60 backdrop-blur-xl border border-white/10 px-4 py-2 rounded-2xl animate-in fade-in slide-in-from-top-4">
-            <Zap className="w-4 h-4 text-yellow-400 fill-yellow-400" />
-            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-white">
-              {midRollPlaying ? "Mid-roll Transmission" : "Pre-roll Advertisement"}
-            </span>
-          </div>
-
-          <div className="absolute bottom-8 right-8 pointer-events-auto">
-            <button
-              onClick={adPlaying ? (adSkippable ? skipAd : undefined) : (midRollTimer <= 0 ? skipMidRoll : undefined)}
-              className={`px-8 py-4 rounded-2xl font-black uppercase tracking-widest text-xs transition-all shadow-2xl flex items-center gap-3
-                ${(adPlaying ? adSkippable : midRollTimer <= 0) 
-                  ? "bg-white text-black hover:bg-zinc-200 shadow-white/10" 
-                  : "bg-black/80 text-zinc-500 border border-white/5 backdrop-blur-xl"}`}
-            >
-              {adPlaying 
-                ? (adTimer > 0 ? `Skip in ${adTimer}s` : "Proceed to Content") 
-                : (midRollTimer > 0 ? `Resuming in ${midRollTimer}s` : "Skip Ad")}
-              <SkipForward className="w-4 h-4" />
-            </button>
-          </div>
+      {/* ── Pre-roll ad overlay ──────────────────────────────────────── */}
+      {adActive && (
+        <div
+          className="absolute inset-x-0 bottom-0 p-4 flex items-end justify-between"
+          style={{ background: "linear-gradient(to top, rgba(0,0,0,0.8), transparent)" }}
+        >
+          <span
+            className="text-[10px] font-black px-2 py-1 rounded uppercase tracking-wider"
+            style={{ background: "rgba(245,158,11,0.9)", color: "#000" }}
+          >
+            Ad
+          </span>
+          <button
+            onClick={adSkippable ? () => setAdActive(false) : undefined}
+            className={cn(
+              "px-4 py-2 rounded-lg text-sm font-bold transition-all",
+              adSkippable
+                ? "bg-white text-black hover:bg-zinc-200 cursor-pointer"
+                : "bg-white/15 text-white/50 cursor-not-allowed"
+            )}
+          >
+            {adSkippable ? "Skip Ad" : `Skip in ${adTimer}s`}
+          </button>
         </div>
       )}
 
-      {/* UI Overlay Controls: Visible only for file streams */}
-      {!isEmbed && currentSource && !adPlaying && !midRollPlaying && (
-        <>
-          {/* Top Info */}
-          <div 
-            className="absolute top-0 left-0 right-0 p-8 flex items-start justify-between bg-gradient-to-b from-black/80 via-black/40 to-transparent transition-opacity duration-500"
-            style={{ opacity: showControls ? 1 : 0 }}
+      {/* ── Mid-roll ad overlay ──────────────────────────────────────── */}
+      {midActive && (
+        <div
+          className="absolute inset-x-0 bottom-0 p-4 flex items-end justify-between"
+          style={{ background: "linear-gradient(to top, rgba(0,0,0,0.8), transparent)" }}
+        >
+          <span
+            className="text-[10px] font-black px-2 py-1 rounded uppercase tracking-wider"
+            style={{ background: "rgba(245,158,11,0.9)", color: "#000" }}
           >
-            <div className="space-y-1">
-              <h3 className="text-xl font-black text-white tracking-tighter uppercase">{title}</h3>
-              <p className="text-[10px] font-black text-blue-500 uppercase tracking-[0.3em]">
-                Episode {episode} • {currentSource?.label || "Primary Stream"}
-              </p>
-            </div>
-            
-            <div className="flex gap-2">
-              <button className="w-10 h-10 bg-white/5 hover:bg-white/10 rounded-xl flex items-center justify-center border border-white/5 transition-all text-white">
-                <Settings className="w-5 h-5" />
-              </button>
-              <button className="w-10 h-10 bg-white/5 hover:bg-white/10 rounded-xl flex items-center justify-center border border-white/5 transition-all text-white">
-                <Info className="w-5 h-5" />
-              </button>
-            </div>
-          </div>
-
-          {/* Bottom Controls */}
-          <div 
-            className="absolute bottom-0 left-0 right-0 p-8 space-y-6 pt-20 bg-gradient-to-t from-black via-black/60 to-transparent transition-opacity duration-500"
-            style={{ opacity: showControls ? 1 : 0 }}
+            Ad
+          </span>
+          <button
+            onClick={
+              midTimer <= 0
+                ? () => { setMidActive(false); videoRef.current?.play().catch(() => {}); }
+                : undefined
+            }
+            className={cn(
+              "px-4 py-2 rounded-lg text-sm font-bold transition-all",
+              midTimer <= 0
+                ? "bg-white text-black hover:bg-zinc-200 cursor-pointer"
+                : "bg-white/15 text-white/50 cursor-not-allowed"
+            )}
           >
-            <div className="space-y-4">
-              {/* Progress */}
-              <div 
-                className="relative h-1.5 w-full bg-white/10 rounded-full cursor-pointer group/seek transition-all hover:h-2"
-                onClick={seek}
-              >
-                <div 
-                  className="absolute top-0 left-0 h-full bg-blue-600 rounded-full pointer-events-none transition-all group-hover/seek:bg-blue-400"
-                  style={{ width: `${progress}%` }}
-                >
-                  <div className="absolute right-0 top-1/2 -translate-y-1/2 w-4 h-4 bg-white rounded-full shadow-2xl scale-0 group-hover/seek:scale-100 transition-transform flex items-center justify-center">
-                    <div className="w-1.5 h-1.5 bg-blue-600 rounded-full" />
-                  </div>
-                </div>
-              </div>
-
-              {/* Toolbar */}
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-8">
-                  <button onClick={togglePlay} className="text-white hover:text-blue-500 transition-all transform active:scale-90">
-                    {isPlaying ? <Pause className="w-8 h-8 fill-current" /> : <Play className="w-8 h-8 fill-current" />}
-                  </button>
-
-                  {onNext && (
-                    <button onClick={onNext} className="text-zinc-500 hover:text-white transition-all transform active:scale-90">
-                      <SkipForward className="w-6 h-6 fill-current" />
-                    </button>
-                  )}
-
-                  <div className="flex items-center gap-4 group/vol">
-                    <button onClick={toggleMute} className="text-zinc-500 hover:text-white transition-all">
-                      {(muted || volume === 0) ? <VolumeX className="w-6 h-6" /> : <Volume2 className="w-6 h-6" />}
-                    </button>
-                    <input 
-                      type="range" min="0" max="1" step="0.05" value={muted ? 0 : volume}
-                      onChange={(e) => {
-                        const v = parseFloat(e.target.value);
-                        setVolume(v);
-                        if (videoRef.current) videoRef.current.volume = v;
-                        setMuted(v === 0);
-                      }}
-                      className="w-0 group-hover/vol:w-24 transition-all opacity-0 group-hover/vol:opacity-100 h-1 bg-white/10 rounded-full accent-blue-600 cursor-pointer"
-                    />
-                  </div>
-
-                  <span className="text-xs font-black text-white font-mono tracking-tighter">
-                    {fmt(currentTime)} <span className="text-zinc-700 mx-2">/</span> {fmt(duration)}
-                  </span>
-                </div>
-
-                <div className="flex items-center gap-6">
-                  <button onClick={() => videoRef.current && (videoRef.current.currentTime -= 10)} className="text-zinc-500 hover:text-white transition-all">
-                    <RotateCcw className="w-5 h-5" />
-                  </button>
-                  <button onClick={toggleFullscreen} className="text-zinc-500 hover:text-white transition-all transform active:scale-90">
-                    {isFullscreen ? <Minimize className="w-6 h-6" /> : <Maximize className="w-6 h-6" />}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </>
+            {midTimer > 0 ? `Resume in ${midTimer}s` : "Resume"}
+          </button>
+        </div>
       )}
 
-      {/* Embed Server Switcher HUD — Always visible for active iframes */}
-      {isEmbed && !adPlaying && !midRollPlaying && (
-        <div className="absolute top-8 left-8 z-30 flex flex-wrap gap-2 group/hosts">
-          <div className="flex items-center gap-3 bg-black/70 backdrop-blur-3xl border border-white/10 p-3 rounded-2xl opacity-40 hover:opacity-100 group-hover/hosts:opacity-100 transition-all duration-300">
-            <div className="flex items-center gap-2 px-2 border-r border-white/10 mr-2">
-              <Zap className="w-3.5 h-3.5 text-blue-500 fill-blue-500" />
-              <span className="text-[10px] font-black text-white/50 uppercase tracking-widest leading-none">Sources</span>
+      {/* ── Source switcher ──────────────────────────────────────────── */}
+      {!adActive && !midActive && sources.length > 1 && (
+        <div
+          className="absolute top-3 left-3 flex flex-wrap gap-1.5 max-w-[calc(100%-5rem)] transition-opacity duration-200"
+          style={{ opacity: showUI ? 1 : 0, pointerEvents: showUI ? "auto" : "none" }}
+        >
+          {sources.map((s, i) => (
+            <button
+              key={i}
+              onClick={() => { setSrcIdx(i); setAllFailed(false); }}
+              className="px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all"
+              style={{
+                background: i === srcIdx ? "var(--brand-primary)" : "rgba(0,0,0,0.65)",
+                color: i === srcIdx ? "white" : "rgba(255,255,255,0.55)",
+                border: "1px solid rgba(255,255,255,0.08)",
+                backdropFilter: "blur(8px)",
+              }}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* ── Controls overlay (video only) ───────────────────────────── */}
+      {src.type !== "iframe" && !adActive && !midActive && !allFailed && (
+        <div
+          className="absolute inset-x-0 bottom-0 flex flex-col transition-opacity duration-200"
+          style={{
+            opacity: showUI ? 1 : 0,
+            pointerEvents: showUI ? "auto" : "none",
+            background:
+              "linear-gradient(to top, rgba(0,0,0,0.88) 0%, rgba(0,0,0,0.35) 55%, transparent 100%)",
+          }}
+        >
+          {/* Progress bar */}
+          <div
+            ref={progressRef}
+            className="w-full cursor-pointer group px-4"
+            style={{ paddingTop: 14, paddingBottom: 10 }}
+            onClick={seek}
+          >
+            <div
+              className="relative w-full rounded-full"
+              style={{ height: 3, background: "rgba(255,255,255,0.18)" }}
+            >
+              <div
+                className="absolute left-0 top-0 h-full rounded-full"
+                style={{
+                  width: `${progress}%`,
+                  background: "var(--brand-primary)",
+                  transition: "width 0.1s linear",
+                }}
+              />
+              {/* Scrubber handle */}
+              <div
+                className="absolute top-1/2 -translate-y-1/2 w-3.5 h-3.5 rounded-full bg-white shadow-md opacity-0 group-hover:opacity-100 transition-opacity"
+                style={{ left: `calc(${progress}% - 7px)` }}
+              />
             </div>
-            {sources.map((s, i) => (
+          </div>
+
+          {/* Button row */}
+          <div className="flex items-center justify-between px-4 pb-3 gap-2">
+            {/* Left cluster */}
+            <div className="flex items-center gap-3">
+              {/* Play / Pause */}
               <button
-                key={i}
-                onClick={() => { setSourceIndex(i); setHasError(false); setAllFailed(false); }}
-                className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all
-                  ${i === sourceIndex ? "bg-blue-600 text-white" : "bg-white/5 text-zinc-400 hover:text-white"}`}
+                onClick={togglePlay}
+                className="text-white hover:text-blue-400 transition-colors"
+                aria-label={isPlaying ? "Pause" : "Play"}
               >
-                {s.label || `Mirror ${i + 1}`}
+                {isPlaying
+                  ? <Pause size={20} fill="white" />
+                  : <Play  size={20} fill="white" />}
               </button>
-            ))}
+
+              {/* Next */}
+              {onNext && (
+                <button
+                  onClick={onNext}
+                  className="transition-colors hover:text-white"
+                  style={{ color: "rgba(255,255,255,0.6)" }}
+                  aria-label="Next episode"
+                >
+                  <SkipForward size={18} />
+                </button>
+              )}
+
+              {/* Volume */}
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={toggleMute}
+                  className="transition-colors hover:text-white"
+                  style={{ color: "rgba(255,255,255,0.7)" }}
+                  aria-label={muted ? "Unmute" : "Mute"}
+                >
+                  {muted || volume === 0
+                    ? <VolumeX size={17} />
+                    : <Volume2 size={17} />}
+                </button>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.05"
+                  value={muted ? 0 : volume}
+                  onChange={onVolumeChange}
+                  className="w-20 h-1 cursor-pointer hidden sm:block"
+                  style={{ accentColor: "var(--brand-primary)" }}
+                  aria-label="Volume"
+                />
+              </div>
+
+              {/* Time */}
+              <span
+                className="text-xs font-mono hidden sm:inline tabular-nums"
+                style={{ color: "rgba(255,255,255,0.65)" }}
+              >
+                {fmtTime(currentTime)} / {fmtTime(duration)}
+              </span>
+            </div>
+
+            {/* Center: title */}
+            {(title || episode) && (
+              <p
+                className="text-xs font-medium truncate max-w-[30%] hidden md:block"
+                style={{ color: "rgba(255,255,255,0.55)" }}
+              >
+                {title}
+                {episode != null ? ` — Ep. ${episode}` : ""}
+              </p>
+            )}
+
+            {/* Right cluster */}
+            <div className="flex items-center gap-2">
+              {/* Subtitle toggle */}
+              {src.tracks && src.tracks.length > 0 && (
+                <button
+                  onClick={() => setSubsOn((v) => !v)}
+                  className="transition-colors hover:text-white"
+                  style={{ color: subsOn ? "var(--brand-primary)" : "rgba(255,255,255,0.5)" }}
+                  aria-label={subsOn ? "Hide subtitles" : "Show subtitles"}
+                >
+                  {subsOn ? <Captions size={17} /> : <CaptionsOff size={17} />}
+                </button>
+              )}
+
+              {/* Settings stub */}
+              <button
+                onClick={() => setSettingsOpen((v) => !v)}
+                className="transition-colors hover:text-white"
+                style={{ color: "rgba(255,255,255,0.6)" }}
+                aria-label="Settings"
+              >
+                <Settings size={16} />
+              </button>
+
+              {settingsOpen && (
+                <div
+                  className="absolute bottom-12 right-12 w-44 rounded-xl py-1.5 shadow-2xl"
+                  style={{
+                    background: "rgba(15,23,42,0.98)",
+                    border: "1px solid var(--border-default)",
+                  }}
+                >
+                  <p
+                    className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    Quality
+                  </p>
+                  {sources.map((s, i) => (
+                    <button
+                      key={i}
+                      onClick={() => { setSrcIdx(i); setSettingsOpen(false); setAllFailed(false); }}
+                      className="w-full text-left px-3 py-2 text-xs transition-colors hover:bg-white/10"
+                      style={{ color: i === srcIdx ? "var(--brand-primary)" : "rgba(255,255,255,0.7)" }}
+                    >
+                      {s.label}
+                      {i === srcIdx && " (active)"}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Fullscreen */}
+              <button
+                onClick={toggleFullscreen}
+                className="transition-colors hover:text-white"
+                style={{ color: "rgba(255,255,255,0.7)" }}
+                aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+              >
+                {isFullscreen ? <Minimize size={17} /> : <Maximize size={17} />}
+              </button>
+            </div>
           </div>
         </div>
       )}
