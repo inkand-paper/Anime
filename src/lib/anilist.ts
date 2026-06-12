@@ -238,8 +238,8 @@ export function normalizeAnime(a: AniListAnime) {
       Chinese: a.title.romaji, // AniList has no Chinese title field
       Romaji: a.title.romaji,
     },
-    image: a.coverImage.extraLarge ?? a.coverImage.large,
-    banner: a.bannerImage ?? a.coverImage.extraLarge,
+    image: a.coverImage.extraLarge ?? a.coverImage.large ?? "",
+    banner: a.bannerImage ?? a.coverImage.extraLarge ?? a.coverImage.large ?? "",
     rating: a.averageScore ? (a.averageScore / 10).toFixed(1) : "N/A",
     year: String(a.seasonYear ?? a.startDate.year ?? ""),
     episodes: a.episodes ?? 0,

@@ -1,55 +1,64 @@
 import { Suspense } from "react";
-import { getTrending, getPopular, getTopRated, getRecentlyAired, normalizeAnime } from "@/lib/anilist";
+import {
+  getTrending,
+  getPopular,
+  getTopRated,
+  getRecentlyAired,
+  normalizeAnime,
+} from "@/lib/anilist";
 import Hero from "@/components/Hero";
 import AnimeGrid from "@/components/AnimeGrid";
 import AdBanner from "@/components/AdBanner";
 import { Anime } from "@/data/anime";
-import { TrendingUp, Flame, Star, Tv } from "lucide-react";
+import { Loader2 } from "lucide-react";
 
-// Revalidate every 10 minutes
-export const revalidate = 600;
+export const revalidate = 600; // Revalidate every 10 minutes
 
-async function fetchAllSections() {
-  const [trending, popular, topRated, recent] = await Promise.allSettled([
-    getTrending(1, 20),
-    getPopular(1, 20),
-    getTopRated(1, 20),
-    getRecentlyAired(1, 20),
+async function fetchSections() {
+  const [trendingRes, popularRes, topRes, recentRes] = await Promise.allSettled([
+    getTrending(1, 24),
+    getPopular(1, 24),
+    getTopRated(1, 24),
+    getRecentlyAired(1, 24),
   ]);
 
-  const safe = <T,>(r: PromiseSettledResult<T>, fallback: T) =>
-    r.status === "fulfilled" ? r.value : fallback;
-
-  const empty = { media: [], pageInfo: { total: 0, currentPage: 1, hasNextPage: false } };
+  const toAnimes = (r: PromiseSettledResult<{ media: Parameters<typeof normalizeAnime>[0][] }>) =>
+    r.status === "fulfilled"
+      ? (r.value.media.map(normalizeAnime) as Anime[])
+      : [];
 
   return {
-    trending: safe(trending, empty).media.map(normalizeAnime) as Anime[],
-    popular:  safe(popular,  empty).media.map(normalizeAnime) as Anime[],
-    topRated: safe(topRated, empty).media.map(normalizeAnime) as Anime[],
-    recent:   safe(recent,   empty).media.map(normalizeAnime) as Anime[],
+    trending: toAnimes(trendingRes),
+    popular:  toAnimes(popularRes),
+    topRated: toAnimes(topRes),
+    recent:   toAnimes(recentRes),
   };
 }
 
 export default async function HomePage() {
-  const { trending, popular, topRated, recent } = await fetchAllSections();
+  const { trending, popular, topRated, recent } = await fetchSections();
 
-  const hero = trending[0] ?? popular[0];
+  const hero = trending[0] ?? popular[0] ?? null;
 
   if (!hero) {
     return (
-      <div className="min-h-dvh flex items-center justify-center">
-        <p className="text-sm font-semibold" style={{ color: "var(--text-muted)" }}>
-          Loading content...
-        </p>
+      <div className="min-h-dvh flex items-center justify-center gap-3">
+        <Loader2 size={24} className="animate-spin" style={{ color: "var(--brand-primary)" }} />
+        <span className="text-sm" style={{ color: "var(--text-muted)" }}>
+          Connecting to AniList...
+        </span>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col">
+    <div>
+      {/* Hero banner (top section, full bleed) */}
       <Hero anime={hero} />
 
-      <div className="relative z-10 space-y-2 pb-20" style={{ marginTop: "-6rem" }}>
+      {/* Content rows — overlap the bottom of the hero */}
+      <div className="relative z-10 pb-20" style={{ marginTop: "-5rem" }}>
+
         {trending.length > 0 && (
           <Suspense>
             <AnimeGrid
@@ -61,7 +70,7 @@ export default async function HomePage() {
           </Suspense>
         )}
 
-        <div className="container mx-auto px-4 sm:px-6">
+        <div className="container mx-auto px-4 sm:px-6 py-2">
           <AdBanner slot="home-mid" />
         </div>
 

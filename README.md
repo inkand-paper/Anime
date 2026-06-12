@@ -1,232 +1,155 @@
-# AnimePortal
+# AniStream
 
-A production-ready anime streaming platform built with Next.js. Features a premium HBO Max-inspired UI, multi-host video fallback, user authentication, subscription paywall, and a referral system.
-
----
+A production-grade anime streaming platform built with Next.js 15, TypeScript, Tailwind CSS, Prisma, and real streaming APIs.
 
 ## Features
 
-- **Security Gate** — Math-based bot challenge with session persistence and lockout
-- **DevTools Detection** — Detects F12 / inspect-element attempts and reloads the page
-- **Authentication** — NextAuth.js v5 with bcrypt password hashing and JWT sessions
-- **Subscription Paywall** — FREE / PREMIUM tiers; new releases locked for free users
-- **Referral System** — Unique referral codes; referrers earn 2 free months of premium
-- **Multi-Host Video Resolver** — Queries 7 dubbed-video hosts from the database, then falls back to Consumet (Gogoanime → Zoro) for subbed content
-- **Ad Integration** — Pre-roll/mid-roll ad injection in the video player plus on-page banner slots
-- **Watch Together** — Room-based synchronized viewing (modal stub; WebSocket in Phase 4)
-- **Live Search** — Instant anime suggestions with history
-- **Multi-Language Titles** — English / Japanese / Chinese switcher
-- **Watchlist** — Add / remove titles, persisted per user session
+- **10,000+ anime titles** via AniList GraphQL API (free, no key required)
+- **Real HLS video streams** via AniWatch/AllAnime API (self-hostable)
+- **7-host dubbed fallback** — Doodstream, VOE, Filemoon, Streamwish, Streamtape, MixDrop, Megastream
+- **Sub + Dub** playback with subtitle track support
+- **Pre-roll + mid-roll ads** with skip countdown
+- **Watch Together** — synchronized playback with invite links
+- **Referral system** — unique codes, 2-month premium reward
+- **Auth** — email/password (bcrypt), NextAuth sessions
+- **Premium paywall** — PayPal, Google Pay, card payments
+- **Admin dashboard** — user management, host health, billing controls
+- **Security** — CSP, HSTS, rate limiting, anti-bot CAPTCHA, DevTools guard
+- **Fully responsive** — mobile, tablet, desktop
 
----
+## Stack
 
-## Tech Stack
+| Layer | Technology |
+|---|---|
+| Framework | Next.js 15 (App Router) |
+| Language | TypeScript 5 |
+| Styling | Tailwind CSS 4 + CSS custom properties |
+| Database | SQLite (dev) / PostgreSQL (prod) via Prisma |
+| Auth | NextAuth v5 (credentials + JWT) |
+| Anime data | AniList GraphQL API |
+| Streaming | AniWatch API (AllAnime) |
+| Video | HLS.js with CORS proxy |
+| Icons | Lucide React |
 
-| Layer       | Technology                              |
-|-------------|------------------------------------------|
-| Framework   | Next.js 14 (App Router, Server Actions) |
-| Language    | TypeScript                              |
-| Styling     | Tailwind CSS v4                         |
-| Database    | Prisma ORM + SQLite (dev) / PostgreSQL (prod) |
-| Auth        | NextAuth.js v5 (Auth.js)               |
-| Validation  | Zod                                     |
-| Security    | bcryptjs · CSP middleware · Nginx rate-limit |
-| Deployment  | Docker + Docker Compose + Nginx         |
+## Quick Start
 
----
-
-## Getting Started
-
-### Prerequisites
-
-- Node.js 20+
-- npm 10+
-- Docker & Docker Compose (production only)
-
-### Local Development
+### 1. Clone
 
 ```bash
-# 1. Clone the repository
 git clone https://github.com/inkand-paper/Anime.git
 cd Anime
+```
 
-# 2. Install dependencies
+### 2. Install
+
+```bash
 npm install
+```
 
-# 3. Configure environment
-cp .env.example .env
-# Edit .env — at minimum set AUTH_SECRET
+### 3. Environment
 
-# 4. Set up the database
-npx prisma migrate dev
-node prisma/seed.js
+```bash
+cp .env.example .env.local
+# Edit .env.local — minimum required:
+#   DATABASE_URL, NEXTAUTH_SECRET, NEXTAUTH_URL
+```
 
-# 5. Start the dev server
+### 4. Database
+
+```bash
+npx prisma db push      # creates SQLite dev.db
+npx prisma db seed      # creates admin + demo users (optional)
+```
+
+### 5. Run
+
+```bash
 npm run dev
+# → http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+## Streaming API Setup
 
----
+Video playback requires the AniWatch API. Self-host it for free on Railway:
 
-## Environment Variables
+1. Go to [railway.app](https://railway.app) → New Project → Deploy from GitHub
+2. Repo: `https://github.com/ghoshRitesh12/aniwatch-api`
+3. Copy the Railway URL into `.env.local` as `ANIWATCH_API_URL`
 
-Copy `.env.example` to `.env` and fill in the values. Required variables:
+A public fallback (`https://aniwatch-api-production-4b7e.up.railway.app`) is used if the env var is not set, but it is rate-limited and should not be used in production.
 
-| Variable          | Description                                      |
-|-------------------|--------------------------------------------------|
-| `AUTH_SECRET`     | Random 32-byte string for JWT signing            |
-| `DATABASE_URL`    | Prisma connection string (SQLite or PostgreSQL)  |
-| `NEXTAUTH_URL`    | Public URL of the app                            |
-| `CONSUMET_API_URL`| Base URL of your Consumet instance               |
+## GitHub Actions
 
-Generate `AUTH_SECRET`:
-```bash
-openssl rand -base64 32
-```
+Workflow files are in `docs/github-actions/`. To activate:
 
----
-
-## Database
-
-### Schema overview
-
-```
-User → Account, Session, Profile, Subscription, WatchlistItem
-Anime → HostMapping
-```
-
-### Migrations
-
-```bash
-# Apply pending migrations in development
-npx prisma migrate dev
-
-# Apply pending migrations in production
-npx prisma migrate deploy
-
-# Open Prisma Studio (GUI)
-npx prisma studio
-```
-
-### Seeding
-
-```bash
-node prisma/seed.js
-```
-
----
-
-## Registering a Dubbed Episode
-
-After uploading a dubbed video to one of the 7 supported hosts, register it so the resolver can find it:
-
-```typescript
-import { registerHostMapping } from "@/lib/video-resolver";
-
-await registerHostMapping(
-  "solo-leveling",   // anime ID in the DB
-  1,                 // episode number
-  "Doodstream",      // host name (see DUBBED_HOSTS constant)
-  "https://dood.re/e/xxxxxx",
-  "iframe"
-);
-```
-
-Supported hosts: `Doodstream`, `VOE`, `Filemoon`, `Streamwish`, `Streamtape`, `MixDrop`, `Megastream`.
-
----
+1. Copy `docs/github-actions/*.yml` to `.github/workflows/`
+2. Add secrets in GitHub → Settings → Secrets and variables → Actions:
+   - `DATABASE_URL`, `NEXTAUTH_SECRET`, `NEXTAUTH_URL`
+   - `NEXT_PUBLIC_APP_URL`, `ANIWATCH_API_URL`, `WEBHOOK_SECRET`
+   - For Vercel: `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`
 
 ## Production Deployment
 
-### Docker Compose (recommended)
+### Vercel (recommended)
 
 ```bash
-# Copy and fill in environment
-cp .env.example .env
-
-# Build and start all services
-docker compose up -d --build
-
-# View logs
-docker compose logs -f app
-
-# Run migrations (first deploy only)
-docker compose exec app npx prisma migrate deploy
-docker compose exec app node prisma/seed.js
+npm install -g vercel
+vercel --prod
 ```
 
-Services started:
-- `animaportal_app` — Next.js on port 3000
-- `animaportal_redis` — Redis on port 6379
-- `animaportal_nginx` — Nginx on ports 80 / 443
+Set all environment variables in the Vercel dashboard.
 
-### SSL / TLS
+### Docker
 
-Place your certificate files in `./ssl/`:
-```
-ssl/cert.pem
-ssl/key.pem
+```bash
+docker-compose up -d
 ```
 
-For Let's Encrypt, use Certbot and mount the certs into the Nginx container.
+Configure `nginx.conf` for your domain and obtain TLS certificates via Certbot.
 
----
+## Demo Accounts
 
-## Security Overview
+After running `npx prisma db seed`:
 
-| Layer              | Implementation |
-|--------------------|----------------|
-| Bot detection      | SecurityGate math challenge (session-persisted, lockout after 5 fails) |
-| DevTools mitigation| `useDevToolsDetection` hook — detects F12 / resize and reloads |
-| Password storage   | bcrypt, 12 rounds |
-| Input validation   | Zod schemas on all Server Actions |
-| Auth sessions      | NextAuth.js JWT, `httpOnly` cookies |
-| HTTP headers       | CSP, HSTS, X-Frame-Options, X-Content-Type-Options (middleware + Nginx) |
-| Rate limiting      | Nginx zones: 30 req/min (API), 5 req/min (auth) |
-| DB relations       | Cascading deletes prevent orphan records |
-
----
+| Email | Password | Role |
+|---|---|---|
+| admin@anistream.com | admin123! | Admin |
+| premium@anistream.com | premium123! | Premium |
 
 ## Project Structure
 
 ```
 src/
-  app/
-    (pages)/          Next.js App Router pages
-    api/
-      auth/           NextAuth route handler
-      health/         Docker health check endpoint
-  components/         Shared UI components
-  context/            React context providers (Language, Watchlist, Subscription)
-  data/               Static seed types & MOCK_ANIME fallback
-  lib/
-    prisma.ts         Singleton Prisma client
-    actions.ts        Server Actions (registerUser, etc.)
-    video-resolver.ts Multi-host video resolution logic
-  middleware.ts       Global CSP + auth route guard
-prisma/
-  schema.prisma       Database schema
-  migrations/         Prisma migration history
-  seed.js             Database seed script
-Dockerfile            Multi-stage production image
-docker-compose.yml    Full stack orchestration
-nginx.conf            Reverse proxy + rate limiting
-.env.example          Environment variable reference
+├── app/                    # Next.js App Router pages
+│   ├── api/                # API routes
+│   │   ├── anime/          # AniList + AniWatch proxies
+│   │   ├── auth/           # NextAuth handler
+│   │   ├── billing/        # Webhook receiver
+│   │   └── proxy/video     # HLS CORS proxy
+│   ├── browse/             # Browse & search page
+│   ├── watch/[id]/         # Watch page
+│   ├── profile/            # User profile
+│   └── admin/              # Admin dashboard
+├── components/             # React components
+├── context/                # React contexts (Language, Watchlist, Subscription)
+├── lib/                    # Utilities
+│   ├── anilist.ts          # AniList GraphQL client
+│   ├── aniwatch.ts         # AniWatch/AllAnime streaming client
+│   ├── video-resolver.ts   # Source resolution (DB → streaming API)
+│   ├── prisma.ts           # DB client singleton
+│   └── validations.ts      # Zod schemas
+└── hooks/                  # Custom hooks
 ```
 
----
+## Security
 
-## Roadmap
+- Content Security Policy with explicit frame-src for all 7 streaming hosts
+- HSTS, X-Frame-Options DENY, COOP, CORP, COEP headers
+- bcrypt (12 rounds) password hashing
+- JWT sessions with role and isPremium claims
+- DB-backed rate limiting on auth routes
+- Anti-bot CAPTCHA gate on entry
+- DevTools detection (F12, Ctrl+Shift+I, window resize threshold)
+- Input validation with Zod on all API endpoints
 
-- [x] Phase 1: Foundation, Security Gate, Discovery UI
-- [x] Phase 2: Auth, Database, Subscription Paywall, Referral System
-- [x] Phase 3: Video Player, Multi-Host Resolver, Ad Integration
-- [ ] Phase 4: Watch Together (WebSocket sync + live chat)
-- [ ] Phase 5: Admin Dashboard, Stripe/PayPal integration, Analytics
-
----
-
-## License
-
-Private repository. All rights reserved.
+See [SECURITY.md](SECURITY.md) for the vulnerability disclosure policy.

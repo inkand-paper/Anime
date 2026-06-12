@@ -12,30 +12,31 @@ export interface VideoSource {
 }
 
 export const DUBBED_HOSTS = [
-  "DOODSTREAM",
-  "VOE",
-  "FILEMOON",
-  "STREAMWISH",
-  "STREAMTAPE",
-  "MIXDROP",
-  "MEGASTREAM",
+  "DOODSTREAM", "VOE", "FILEMOON", "STREAMWISH",
+  "STREAMTAPE", "MIXDROP", "MEGASTREAM",
 ] as const;
 
 export type DubbedHost = (typeof DUBBED_HOSTS)[number];
 
 /**
- * Sanitizes and mutates known structural naming patterns that cause scrapers to fail.
+ * Sanitize season suffixes that confuse search matching.
+ * e.g. "Attack on Titan 2nd Season" → "Attack on Titan Season 2"
  */
-function sanitizeTitleForScraper(title: string): string {
+function sanitizeTitle(title: string): string {
   return title
-    .replace(/2nd Season/gi, "Season 2")
-    .replace(/3rd Season/gi, "Season 3")
-    .replace(/4th Season/gi, "Season 4")
+    .replace(/(\d+)(?:st|nd|rd|th) Season/gi, (_, n) => `Season ${n}`)
+    .replace(/Part (\d+)/gi, "Part $1")
     .trim();
 }
 
 /**
- * Resolve video sources for a given AniList anime ID + episode number.
+ * Resolve playable video sources for an AniList anime + episode.
+ *
+ * Priority:
+ *  1. Dubbed uploads in HostMapping DB (admin-uploaded, priority 1–7)
+ *  2. AllAnime dubbed HLS (priority 50)
+ *  3. AllAnime subbed HLS — all quality variants from one API call (priority 100+)
+ *  4. AnimePahe (priority 200+, imported on demand to avoid circular deps)
  */
 export async function resolveVideoSources(
   anilistId: string,
@@ -45,131 +46,98 @@ export async function resolveVideoSources(
 ): Promise<VideoSource[]> {
   const sources: VideoSource[] = [];
 
-  // ── 1. Dubbed DB Mappings Lookup ─────────────────────────────────────────
+  // ── 1. DB dubbed overrides ────────────────────────────────────────────────
   try {
     const mappings = await prisma.hostMapping.findMany({
       where: { animeId: anilistId, episode },
       orderBy: { host: "asc" },
     });
-    
     mappings.forEach((m, i) => {
       sources.push({
-        label: `${m.host.charAt(0) + m.host.slice(1).toLowerCase()} (DUB)`,
+        label: `${m.host[0]}${m.host.slice(1).toLowerCase()} (DUB)`,
         url: m.embedUrl,
-        type: (m.embedType as "iframe" | "hls" | "mp4") ?? "iframe",
+        type: (m.embedType as VideoSource["type"]) ?? "iframe",
         priority: i + 1,
         dubbed: true,
       });
     });
   } catch (e) {
-    console.warn("[resolver] Local DB lookup failed or bypassed:", e);
+    console.warn("[resolver] DB lookup failed:", e);
   }
 
-  // If local DB overrides exist, return early to optimize performance
+  // Return early if we have manually uploaded dubbed content
   if (sources.length > 0) {
-    return sources.sort((a, b) => a.priority - b.priority);
+    return sources;
   }
 
-  // ── 2. External Streaming Scraper Layer ─────────────────────────────────
+  // ── 2. AllAnime streaming API ─────────────────────────────────────────────
   try {
-    // Collect all query permutations into a sanitized string array
-    const searchQueries: string[] = [];
-    if (Array.isArray(titlesInput)) {
-      titlesInput.forEach(t => {
-        searchQueries.push(t);
-        const clean = sanitizeTitleForScraper(t);
-        if (clean !== t) searchQueries.push(clean);
+    // Build deduplicated search query list
+    const rawTitles = Array.isArray(titlesInput)
+      ? titlesInput
+      : titlesInput
+      ? [titlesInput]
+      : [];
+    const queries = Array.from(
+      new Set(rawTitles.flatMap((t) => [t, sanitizeTitle(t)]))
+    ).filter(Boolean);
+    if (queries.length === 0 && anilistId) queries.push(anilistId);
+
+    // Find the show ID on AllAnime
+    let showId: string | null = null;
+    for (const q of queries) {
+      showId = await findAniwatchId(malId ?? null, q);
+      if (showId) break;
+    }
+
+    if (!showId) {
+      console.warn(`[resolver] No AllAnime match for: ${queries.join(", ")}`);
+      return sources;
+    }
+
+    // Fetch episode list
+    const episodes = await awGetEpisodes(showId);
+    const epEntry  = episodes.find((e) => e.number === episode)
+                  ?? episodes.find((e) => Math.abs(e.number - episode) < 0.1);
+
+    if (!epEntry) {
+      console.warn(`[resolver] Episode ${episode} not found in AllAnime for show ${showId}`);
+      return sources;
+    }
+
+    // Dub (one call — AllAnime returns all quality variants together)
+    const dubResult = await awGetSources(epEntry.episodeId, "hd-1", "dub");
+    if (dubResult?.sources?.length) {
+      dubResult.sources.forEach((s, i) => {
+        sources.push({
+          label: s.quality ? `DUB ${s.quality}` : i === 0 ? "DUB HD" : `DUB ${i + 1}`,
+          url: s.url,
+          type: s.isM3U8 ? "hls" : "mp4",
+          priority: 50 + i,
+          dubbed: true,
+          headers: dubResult.headers,
+          tracks: dubResult.tracks as VideoSource["tracks"],
+        });
       });
-    } else if (typeof titlesInput === "string") {
-      searchQueries.push(titlesInput);
-      const clean = sanitizeTitleForScraper(titlesInput);
-      if (clean !== titlesInput) searchQueries.push(clean);
-    } else {
-      searchQueries.push(anilistId);
     }
 
-    // Remove duplicates from query stack
-    const uniqueQueries = Array.from(new Set(searchQueries));
-    let aniwatchId: string | null = null;
-
-    // Linearly check every fallback string variant until the scraper accepts one
-    for (const query of uniqueQueries) {
-      console.log(`[resolver] Querying provider endpoint for match index: "${query}"`);
-      aniwatchId = await findAniwatchId(malId ?? null, query);
-      if (aniwatchId) {
-        console.log(`[resolver] Match verified! Resolved tracking index to node ID: ${aniwatchId}`);
-        break;
-      }
-    }
-
-    if (aniwatchId) {
-      const episodes = await awGetEpisodes(aniwatchId);
-      const epEntry = episodes.find((e) => e.number === episode);
-
-      if (epEntry) {
-        // Try Dub stream configurations first
-        const dubSources = await awGetSources(epEntry.episodeId, "hd-1", "dub");
-        if (dubSources?.sources?.length) {
-          const best = dubSources.sources.find((s) => s.isM3U8) ?? dubSources.sources[0];
-          sources.push({
-            label: "HD Dub",
-            url: best.url,
-            type: "hls",
-            priority: 50,
-            dubbed: true,
-            headers: dubSources.headers,
-            tracks: dubSources.tracks,
-          });
-        }
-
-        // Sub Stream Mirror Node 1 (HD-1)
-        const sub1 = await awGetSources(epEntry.episodeId, "hd-1", "sub");
-        if (sub1?.sources?.length) {
-          const best = sub1.sources.find((s) => s.isM3U8) ?? sub1.sources[0];
-          sources.push({
-            label: "HD-1 Sub",
-            url: best.url,
-            type: "hls",
-            priority: 100,
-            dubbed: false,
-            headers: sub1.headers,
-            tracks: sub1.tracks,
-          });
-        }
-
-        // Sub Stream Mirror Node 2 (HD-2)
-        const sub2 = await awGetSources(epEntry.episodeId, "hd-2", "sub");
-        if (sub2?.sources?.length) {
-          const best = sub2.sources.find((s) => s.isM3U8) ?? sub2.sources[0];
-          sources.push({
-            label: "HD-2 Sub",
-            url: best.url,
-            type: "hls",
-            priority: 110,
-            dubbed: false,
-            headers: sub2.headers,
-            tracks: sub2.tracks,
-          });
-        }
-
-        // Sub Stream Mirror Node 3 (HD-3)
-        const sub3 = await awGetSources(epEntry.episodeId, "hd-3", "sub");
-        if (sub3?.sources?.length) {
-          const best = sub3.sources.find((s) => s.isM3U8) ?? sub3.sources[0];
-          sources.push({
-            label: "HD-3 Sub",
-            url: best.url,
-            type: "hls",
-            priority: 120,
-            dubbed: false,
-            headers: sub3.headers,
-            tracks: sub3.tracks,
-          });
-        }
-      }
+    // Sub
+    const subResult = await awGetSources(epEntry.episodeId, "hd-1", "sub");
+    if (subResult?.sources?.length) {
+      subResult.sources.forEach((s, i) => {
+        sources.push({
+          label: s.quality ? `SUB ${s.quality}` : i === 0 ? "SUB HD" : `SUB ${i + 1}`,
+          url: s.url,
+          type: s.isM3U8 ? "hls" : "mp4",
+          priority: 100 + i,
+          dubbed: false,
+          headers: subResult.headers,
+          tracks: subResult.tracks as VideoSource["tracks"],
+        });
+      });
     }
   } catch (e) {
-    console.warn("[resolver] Upstream parser error in stream fallback orchestration:", e);
+    console.warn("[resolver] AllAnime failed:", e);
   }
 
   return sources.sort((a, b) => a.priority - b.priority);
@@ -180,7 +148,7 @@ export async function registerHostMapping(
   episode: number,
   host: DubbedHost,
   embedUrl: string,
-  embedType: "iframe" | "hls" | "mp4" = "iframe"
+  embedType: VideoSource["type"] = "iframe"
 ): Promise<void> {
   await prisma.hostMapping.upsert({
     where: { animeId_episode_host: { animeId, episode, host } },
