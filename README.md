@@ -1,115 +1,98 @@
 # AniStream
 
-A production-grade anime streaming platform built with Next.js 15, TypeScript, Tailwind CSS, Prisma, and real streaming APIs.
+A production-grade anime streaming platform built with Next.js 15, TypeScript, Tailwind CSS 4, Prisma, and real streaming APIs.
+
+## Quick Start
+
+```bash
+# 1. Clone
+git clone https://github.com/inkand-paper/Anime.git
+cd Anime
+
+# 2. Install (postinstall auto-runs prisma generate)
+npm install
+
+# 3. Configure environment
+cp .env.example .env.local
+# Edit .env.local — set AUTH_SECRET and optionally ANIWATCH_API_URL
+
+# 4. Set up database
+npx prisma db push
+# Optional: seed demo accounts
+npx prisma db seed
+
+# 5. Start dev server
+npm run dev
+# → http://localhost:3000
+```
+
+> **Note:** `npm install` automatically runs `prisma generate` via the `postinstall` script.  
+> If you see `@prisma/client did not initialize yet`, run `npx prisma generate` manually then restart.
+
+## Streaming Setup
+
+Video playback requires the AniWatch API. The fastest way to get it running for free:
+
+1. Go to [railway.app](https://railway.app) → New Project → Deploy from GitHub
+2. Use repo: `https://github.com/ghoshRitesh12/aniwatch-api`
+3. Copy the Railway URL into `.env.local` as `ANIWATCH_API_URL`
+
+A public fallback is used if the variable isn't set, but it's rate-limited — not for production.
 
 ## Features
 
-- **10,000+ anime titles** via AniList GraphQL API (free, no key required)
-- **Real HLS video streams** via AniWatch/AllAnime API (self-hostable)
-- **7-host dubbed fallback** — Doodstream, VOE, Filemoon, Streamwish, Streamtape, MixDrop, Megastream
-- **Sub + Dub** playback with subtitle track support
-- **Pre-roll + mid-roll ads** with skip countdown
+- **15,000+ anime titles** via AniList GraphQL (no API key required)
+- **Real HLS video streams** via AllAnime/AniWatch API
+- **Sub + Dub** with automatic quality fallback
+- **7-host dubbed upload system** (Doodstream, VOE, Filemoon, Streamwish, Streamtape, MixDrop, Megastream)
 - **Watch Together** — synchronized playback with invite links
-- **Referral system** — unique codes, 2-month premium reward
-- **Auth** — email/password (bcrypt), NextAuth sessions
-- **Premium paywall** — PayPal, Google Pay, card payments
-- **Admin dashboard** — user management, host health, billing controls
-- **Security** — CSP, HSTS, rate limiting, anti-bot CAPTCHA, DevTools guard
+- **Referral system** — 2-month premium reward
+- **Pre-roll + mid-roll ads** with skip countdown
+- **Anti-bot CAPTCHA** + DevTools guard
+- **Admin dashboard** — user management, host health monitoring
+- **Premium paywall** — PayPal, Google Pay, card
 - **Fully responsive** — mobile, tablet, desktop
 
-## Stack
+## Tech Stack
 
 | Layer | Technology |
 |---|---|
-| Framework | Next.js 15 (App Router) |
+| Framework | Next.js 15 (App Router, Turbopack) |
 | Language | TypeScript 5 |
 | Styling | Tailwind CSS 4 + CSS custom properties |
 | Database | SQLite (dev) / PostgreSQL (prod) via Prisma |
 | Auth | NextAuth v5 (credentials + JWT) |
 | Anime data | AniList GraphQL API |
-| Streaming | AniWatch API (AllAnime) |
-| Video | HLS.js with CORS proxy |
+| Streaming | AllAnime / AniWatch API |
+| Video | HLS.js + server-side CORS proxy |
 | Icons | Lucide React |
 
-## Quick Start
+## Environment Variables
 
-### 1. Clone
+| Variable | Required | Description |
+|---|---|---|
+| `AUTH_SECRET` | **Yes** | NextAuth v5 secret (generate: `npx auth secret`) |
+| `DATABASE_URL` | **Yes** | SQLite: `file:./dev.db` or PostgreSQL URL |
+| `NEXTAUTH_URL` | **Yes** | App URL (e.g. `http://localhost:3000`) |
+| `ANIWATCH_API_URL` | Recommended | Self-hosted AniWatch API URL |
+| `ADMIN_EMAILS` | Optional | Comma-separated admin email addresses |
+| `WEBHOOK_SECRET` | Optional | For billing webhook verification |
 
-```bash
-git clone https://github.com/inkand-paper/Anime.git
-cd Anime
-```
-
-### 2. Install
-
-```bash
-npm install
-```
-
-### 3. Environment
+## Scripts
 
 ```bash
-cp .env.example .env.local
-# Edit .env.local — minimum required:
-#   DATABASE_URL, NEXTAUTH_SECRET, NEXTAUTH_URL
+npm run dev          # Start dev server (Turbopack)
+npm run build        # Production build
+npm run start        # Start production server
+npm run setup        # prisma generate + prisma db push (first-time setup)
+npm run db:push      # Push schema changes to DB
+npm run db:seed      # Seed demo accounts
+npm run db:studio    # Open Prisma Studio
+npm run type-check   # TypeScript check
+npm run lint         # ESLint
 ```
 
-### 4. Database
-
-```bash
-npx prisma db push      # creates SQLite dev.db
-npx prisma db seed      # creates admin + demo users (optional)
-```
-
-### 5. Run
-
-```bash
-npm run dev
-# → http://localhost:3000
-```
-
-## Streaming API Setup
-
-Video playback requires the AniWatch API. Self-host it for free on Railway:
-
-1. Go to [railway.app](https://railway.app) → New Project → Deploy from GitHub
-2. Repo: `https://github.com/ghoshRitesh12/aniwatch-api`
-3. Copy the Railway URL into `.env.local` as `ANIWATCH_API_URL`
-
-A public fallback (`https://aniwatch-api-production-4b7e.up.railway.app`) is used if the env var is not set, but it is rate-limited and should not be used in production.
-
-## GitHub Actions
-
-Workflow files are in `docs/github-actions/`. To activate:
-
-1. Copy `docs/github-actions/*.yml` to `.github/workflows/`
-2. Add secrets in GitHub → Settings → Secrets and variables → Actions:
-   - `DATABASE_URL`, `NEXTAUTH_SECRET`, `NEXTAUTH_URL`
-   - `NEXT_PUBLIC_APP_URL`, `ANIWATCH_API_URL`, `WEBHOOK_SECRET`
-   - For Vercel: `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`
-
-## Production Deployment
-
-### Vercel (recommended)
-
-```bash
-npm install -g vercel
-vercel --prod
-```
-
-Set all environment variables in the Vercel dashboard.
-
-### Docker
-
-```bash
-docker-compose up -d
-```
-
-Configure `nginx.conf` for your domain and obtain TLS certificates via Certbot.
-
-## Demo Accounts
-
-After running `npx prisma db seed`:
+## Demo Accounts (after `npm run db:seed`)
 
 | Email | Password | Role |
 |---|---|---|
@@ -120,36 +103,59 @@ After running `npx prisma db seed`:
 
 ```
 src/
-├── app/                    # Next.js App Router pages
-│   ├── api/                # API routes
-│   │   ├── anime/          # AniList + AniWatch proxies
-│   │   ├── auth/           # NextAuth handler
-│   │   ├── billing/        # Webhook receiver
-│   │   └── proxy/video     # HLS CORS proxy
-│   ├── browse/             # Browse & search page
-│   ├── watch/[id]/         # Watch page
-│   ├── profile/            # User profile
-│   └── admin/              # Admin dashboard
-├── components/             # React components
-├── context/                # React contexts (Language, Watchlist, Subscription)
-├── lib/                    # Utilities
-│   ├── anilist.ts          # AniList GraphQL client
-│   ├── aniwatch.ts         # AniWatch/AllAnime streaming client
-│   ├── video-resolver.ts   # Source resolution (DB → streaming API)
-│   ├── prisma.ts           # DB client singleton
-│   └── validations.ts      # Zod schemas
-└── hooks/                  # Custom hooks
+├── app/
+│   ├── api/
+│   │   ├── anime/[id]/          # AniList metadata proxy
+│   │   ├── anime/[id]/episode/  # Stream source resolver
+│   │   ├── anime/search/        # Search + browse endpoint
+│   │   ├── auth/[...nextauth]/  # NextAuth handler
+│   │   ├── billing/webhook/     # PayPal/Stripe webhook
+│   │   └── proxy/video/         # HLS CORS proxy
+│   ├── browse/                  # Browse & search page
+│   ├── watch/[id]/              # Watch page + video player
+│   ├── profile/                 # User profile + referral code
+│   ├── admin/                   # Admin control panel
+│   ├── login/ signup/           # Auth pages
+│   └── watchlist/               # Saved anime
+├── components/
+│   ├── VideoPlayer.tsx          # HLS.js player + ads
+│   ├── AnimeCard.tsx            # Card with hover expand
+│   ├── AnimeGrid.tsx            # Horizontal scroll row
+│   ├── Hero.tsx                 # Featured anime banner
+│   ├── Navbar.tsx               # Navigation
+│   ├── SearchOverlay.tsx        # Live search
+│   ├── SecurityGate.tsx         # Anti-bot CAPTCHA
+│   ├── WatchTogetherModal.tsx   # Sync room creation
+│   ├── PremiumModal.tsx         # Subscription upsell
+│   └── AdBanner.tsx             # Ad placements
+├── context/
+│   ├── LanguageContext.tsx      # English / Japanese / Chinese
+│   ├── WatchlistContext.tsx     # Local watchlist state
+│   └── SubscriptionContext.tsx  # Premium status
+└── lib/
+    ├── anilist.ts               # AniList GraphQL client
+    ├── aniwatch.ts              # AllAnime streaming client
+    ├── video-resolver.ts        # DB → API source resolution
+    ├── prisma.ts                # Prisma singleton
+    └── validations.ts           # Zod schemas
 ```
+
+## GitHub Actions
+
+Workflow files are in `docs/github-actions/`. To enable:
+
+1. Copy the YAML files to `.github/workflows/`
+2. Add repository secrets: `AUTH_SECRET`, `DATABASE_URL`, `NEXTAUTH_URL`, `ANIWATCH_API_URL`, `WEBHOOK_SECRET`
 
 ## Security
 
-- Content Security Policy with explicit frame-src for all 7 streaming hosts
-- HSTS, X-Frame-Options DENY, COOP, CORP, COEP headers
-- bcrypt (12 rounds) password hashing
-- JWT sessions with role and isPremium claims
-- DB-backed rate limiting on auth routes
-- Anti-bot CAPTCHA gate on entry
-- DevTools detection (F12, Ctrl+Shift+I, window resize threshold)
-- Input validation with Zod on all API endpoints
+- Content Security Policy with strict directives
+- HSTS, X-Frame-Options DENY, COOP, CORP, COEP
+- bcrypt password hashing (12 rounds)
+- JWT sessions with role claims
+- Rate limiting via DB-backed sliding window
+- Anti-bot CAPTCHA on entry
+- DevTools detection (F12, keyboard shortcuts, window resize)
+- Zod validation on all API inputs
 
 See [SECURITY.md](SECURITY.md) for the vulnerability disclosure policy.

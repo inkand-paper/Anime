@@ -1,4 +1,3 @@
-import { prisma } from "@/lib/prisma";
 import { awGetEpisodes, awGetSources, findAniwatchId } from "@/lib/aniwatch";
 
 export interface VideoSource {
@@ -18,25 +17,50 @@ export const DUBBED_HOSTS = [
 
 export type DubbedHost = (typeof DUBBED_HOSTS)[number];
 
-/**
- * Sanitize season suffixes that confuse search matching.
- * e.g. "Attack on Titan 2nd Season" → "Attack on Titan Season 2"
- */
+/** Fix season naming variants that break title matching */
 function sanitizeTitle(title: string): string {
   return title
     .replace(/(\d+)(?:st|nd|rd|th) Season/gi, (_, n) => `Season ${n}`)
-    .replace(/Part (\d+)/gi, "Part $1")
+    .replace(/Season (\d+)/gi, "Season $1")
     .trim();
 }
 
 /**
- * Resolve playable video sources for an AniList anime + episode.
+ * Lazy-load prisma so a missing generated client doesn't crash the
+ * entire module import. Episode streaming still works without a DB.
+ */
+async function getDbMappings(
+  animeId: string,
+  episode: number
+): Promise<VideoSource[]> {
+  try {
+    // Dynamic import — if @prisma/client isn't generated yet this throws
+    // inside the try/catch instead of at module-load time
+    const { prisma } = await import("@/lib/prisma");
+    const mappings = await prisma.hostMapping.findMany({
+      where: { animeId, episode },
+      orderBy: { host: "asc" },
+    });
+    return mappings.map((m, i) => ({
+      label: `${m.host[0]}${m.host.slice(1).toLowerCase()} (DUB)`,
+      url: m.embedUrl,
+      type: (m.embedType ?? "iframe") as VideoSource["type"],
+      priority: i + 1,
+      dubbed: true,
+    }));
+  } catch {
+    // Prisma not generated or DB not reachable — skip silently
+    return [];
+  }
+}
+
+/**
+ * Resolve video sources for an AniList anime ID + episode number.
  *
- * Priority:
- *  1. Dubbed uploads in HostMapping DB (admin-uploaded, priority 1–7)
- *  2. AllAnime dubbed HLS (priority 50)
- *  3. AllAnime subbed HLS — all quality variants from one API call (priority 100+)
- *  4. AnimePahe (priority 200+, imported on demand to avoid circular deps)
+ * Order:
+ *  1. Admin-uploaded dubbed files in DB (HostMapping)
+ *  2. AllAnime dubbed HLS streams
+ *  3. AllAnime subbed HLS streams
  */
 export async function resolveVideoSources(
   anilistId: string,
@@ -47,43 +71,31 @@ export async function resolveVideoSources(
   const sources: VideoSource[] = [];
 
   // ── 1. DB dubbed overrides ────────────────────────────────────────────────
-  try {
-    const mappings = await prisma.hostMapping.findMany({
-      where: { animeId: anilistId, episode },
-      orderBy: { host: "asc" },
-    });
-    mappings.forEach((m, i) => {
-      sources.push({
-        label: `${m.host[0]}${m.host.slice(1).toLowerCase()} (DUB)`,
-        url: m.embedUrl,
-        type: (m.embedType as VideoSource["type"]) ?? "iframe",
-        priority: i + 1,
-        dubbed: true,
-      });
-    });
-  } catch (e) {
-    console.warn("[resolver] DB lookup failed:", e);
-  }
-
-  // Return early if we have manually uploaded dubbed content
-  if (sources.length > 0) {
-    return sources;
+  const dbSources = await getDbMappings(anilistId, episode);
+  if (dbSources.length > 0) {
+    // Have manually uploaded dubbed content — return immediately, no API needed
+    return dbSources;
   }
 
   // ── 2. AllAnime streaming API ─────────────────────────────────────────────
   try {
-    // Build deduplicated search query list
     const rawTitles = Array.isArray(titlesInput)
       ? titlesInput
       : titlesInput
       ? [titlesInput]
       : [];
+
+    // Build deduplicated search queries including sanitized variants
     const queries = Array.from(
       new Set(rawTitles.flatMap((t) => [t, sanitizeTitle(t)]))
     ).filter(Boolean);
-    if (queries.length === 0 && anilistId) queries.push(anilistId);
 
-    // Find the show ID on AllAnime
+    if (queries.length === 0) {
+      console.warn(`[resolver] No title provided for anilistId=${anilistId}`);
+      return sources;
+    }
+
+    // Try each title variant until AllAnime returns a match
     let showId: string | null = null;
     for (const q of queries) {
       showId = await findAniwatchId(malId ?? null, q);
@@ -91,21 +103,26 @@ export async function resolveVideoSources(
     }
 
     if (!showId) {
-      console.warn(`[resolver] No AllAnime match for: ${queries.join(", ")}`);
+      console.warn(`[resolver] No AllAnime match for: ${queries.join(" | ")}`);
       return sources;
     }
 
     // Fetch episode list
     const episodes = await awGetEpisodes(showId);
-    const epEntry  = episodes.find((e) => e.number === episode)
-                  ?? episodes.find((e) => Math.abs(e.number - episode) < 0.1);
+    // Try exact match first, then nearest (handles 0.5 episode numbers)
+    const epEntry =
+      episodes.find((e) => e.number === episode) ??
+      episodes.find((e) => Math.abs(e.number - episode) < 0.6);
 
     if (!epEntry) {
-      console.warn(`[resolver] Episode ${episode} not found in AllAnime for show ${showId}`);
+      console.warn(
+        `[resolver] Episode ${episode} not in AllAnime list for show ${showId}. ` +
+        `Available: ${episodes.map((e) => e.number).join(", ")}`
+      );
       return sources;
     }
 
-    // Dub (one call — AllAnime returns all quality variants together)
+    // Dub stream — AllAnime returns all quality variants in one response
     const dubResult = await awGetSources(epEntry.episodeId, "hd-1", "dub");
     if (dubResult?.sources?.length) {
       dubResult.sources.forEach((s, i) => {
@@ -121,7 +138,7 @@ export async function resolveVideoSources(
       });
     }
 
-    // Sub
+    // Sub stream
     const subResult = await awGetSources(epEntry.episodeId, "hd-1", "sub");
     if (subResult?.sources?.length) {
       subResult.sources.forEach((s, i) => {
@@ -150,9 +167,14 @@ export async function registerHostMapping(
   embedUrl: string,
   embedType: VideoSource["type"] = "iframe"
 ): Promise<void> {
-  await prisma.hostMapping.upsert({
-    where: { animeId_episode_host: { animeId, episode, host } },
-    create: { animeId, episode, host, embedUrl, embedType },
-    update: { embedUrl, embedType },
-  });
+  try {
+    const { prisma } = await import("@/lib/prisma");
+    await prisma.hostMapping.upsert({
+      where: { animeId_episode_host: { animeId, episode, host } },
+      create: { animeId, episode, host, embedUrl, embedType },
+      update: { embedUrl, embedType },
+    });
+  } catch (e) {
+    console.error("[registerHostMapping] Failed:", e);
+  }
 }
