@@ -79,9 +79,15 @@ export default function VideoPlayer({
 
     if (src.type === "hls") {
       // Route through our Next.js proxy so CORS / referer headers are handled
+      // Use the source's own Referer header if present (AnimePahe needs kwik.si,
+      // AllAnime needs allanime.day) — proxy attaches it server-side
+      const srcReferer =
+        src.headers?.Referer ??
+        src.headers?.referer ??
+        "https://allanime.day/";
       const proxyUrl =
         `/api/proxy/video?url=${encodeURIComponent(src.url)}` +
-        `&referer=${encodeURIComponent("https://allanime.day/")}`;
+        `&referer=${encodeURIComponent(srcReferer)}`;
 
       if (Hls.isSupported()) {
         const hls = new Hls({

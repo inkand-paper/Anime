@@ -2,8 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAnimeById } from "@/lib/anilist";
 import { resolveVideoSources } from "@/lib/video-resolver";
 
-// GET /api/anime/[id]/episode/[ep]
-// id = AniList numeric ID, ep = episode number
+/**
+ * GET /api/anime/[id]/episode/[ep]
+ *
+ * id  = AniList numeric ID (e.g. 21)
+ * ep  = episode number (e.g. 1)
+ *
+ * Returns { sources: VideoSource[] } sorted by priority.
+ * AllAnime and AnimePahe are queried in parallel.
+ */
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string; ep: string }> }
@@ -12,41 +19,52 @@ export async function GET(
   const episode = parseInt(ep, 10);
 
   if (isNaN(episode) || episode < 1) {
-    return NextResponse.json({ error: "Invalid episode number" }, { status: 400 });
+    return NextResponse.json(
+      { error: "Invalid episode number", sources: [] },
+      { status: 400 }
+    );
   }
 
-  // Define an array of potential title formats to maximize search matching success
-  let titles: string[] = [];
+  // Fetch AniList metadata to get all title variants for better matching
+  const titleVariants: string[] = [];
   let malId: number | null = null;
 
   try {
     const numericId = parseInt(id, 10);
     if (!isNaN(numericId)) {
       const anime = await getAnimeById(numericId);
-      if (anime && anime.title) {
+      if (anime) {
         malId = anime.idMal;
-        
-        // Add title variants sequentially based on lookup reliability
-        if (anime.title.romaji) titles.push(anime.title.romaji);
-        if (anime.title.english) titles.push(anime.title.english);
-        if (anime.title.userPreferred) titles.push(anime.title.userPreferred);
+        // Add all non-null title variants — more options = better API matching
+        const t = anime.title;
+        if (t.romaji)  titleVariants.push(t.romaji);
+        if (t.english) titleVariants.push(t.english);
+        if (t.native)  titleVariants.push(t.native);
       }
     }
-  } catch (err) {
-    console.error("[ROUTE DEBUG] Non-fatal: Failed to pre-fetch AniList metadata maps:", err);
+  } catch (e) {
+    console.warn(`[episode-route] AniList lookup failed for id=${id}:`, e);
   }
 
-  console.log(`[ROUTE DEBUG] Initializing resolveVideoSources for AniList ID: ${id}, Ep: ${episode}`);
-  console.log(`[ROUTE DEBUG] Candidate titles to attempt:`, titles);
+  // Deduplicate while preserving order
+  const titles = Array.from(new Set(titleVariants.filter(Boolean)));
+
+  if (titles.length === 0) {
+    return NextResponse.json(
+      { error: "Could not find anime metadata", sources: [] },
+      { status: 404 }
+    );
+  }
 
   const sources = await resolveVideoSources(id, episode, titles, malId);
 
-  console.log(`[ROUTE DEBUG] resolveVideoSources completed. Total stream nodes found: ${sources.length}`);
-
   if (sources.length === 0) {
-    console.warn(`[ROUTE DEBUG] Returning 404! No stream providers could resolve links for ID: ${id} (Ep ${episode})`);
     return NextResponse.json(
-      { error: "No stream sources found for this episode.", sources: [] },
+      {
+        error: `No stream found for episode ${episode}. ` +
+               `Tried AllAnime + AnimePahe with titles: ${titles.join(", ")}`,
+        sources: [],
+      },
       { status: 404 }
     );
   }

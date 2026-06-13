@@ -1,4 +1,10 @@
 import { awGetEpisodes, awGetSources, findAniwatchId } from "@/lib/aniwatch";
+import {
+  paheFindSession,
+  paheGetAllEpisodes,
+  paheGetStreams,
+  extractKwikM3u8,
+} from "@/lib/animepahe";
 
 export interface VideoSource {
   label: string;
@@ -17,31 +23,22 @@ export const DUBBED_HOSTS = [
 
 export type DubbedHost = (typeof DUBBED_HOSTS)[number];
 
-/** Fix season naming variants that break title matching */
-function sanitizeTitle(title: string): string {
-  return title
+function sanitizeTitle(t: string): string {
+  return t
     .replace(/(\d+)(?:st|nd|rd|th) Season/gi, (_, n) => `Season ${n}`)
-    .replace(/Season (\d+)/gi, "Season $1")
+    .replace(/\s+/g, " ")
     .trim();
 }
 
-/**
- * Lazy-load prisma so a missing generated client doesn't crash the
- * entire module import. Episode streaming still works without a DB.
- */
-async function getDbMappings(
-  animeId: string,
-  episode: number
-): Promise<VideoSource[]> {
+/** Lazy DB import — skips cleanly if prisma generate hasn't been run */
+async function getDbMappings(animeId: string, episode: number): Promise<VideoSource[]> {
   try {
-    // Dynamic import — if @prisma/client isn't generated yet this throws
-    // inside the try/catch instead of at module-load time
     const { prisma } = await import("@/lib/prisma");
-    const mappings = await prisma.hostMapping.findMany({
+    const rows = await prisma.hostMapping.findMany({
       where: { animeId, episode },
       orderBy: { host: "asc" },
     });
-    return mappings.map((m, i) => ({
+    return rows.map((m, i) => ({
       label: `${m.host[0]}${m.host.slice(1).toLowerCase()} (DUB)`,
       url: m.embedUrl,
       type: (m.embedType ?? "iframe") as VideoSource["type"],
@@ -49,18 +46,139 @@ async function getDbMappings(
       dubbed: true,
     }));
   } catch {
-    // Prisma not generated or DB not reachable — skip silently
     return [];
   }
 }
 
+// ─── AllAnime ─────────────────────────────────────────────────────────────────
+
+async function resolveAllAnime(
+  titles: string[],
+  malId: number | null | undefined,
+  episode: number
+): Promise<VideoSource[]> {
+  const sources: VideoSource[] = [];
+  try {
+    let showId: string | null = null;
+    for (const q of titles) {
+      showId = await findAniwatchId(malId ?? null, q);
+      if (showId) break;
+    }
+    if (!showId) return sources;
+
+    const episodes = await awGetEpisodes(showId);
+    const ep =
+      episodes.find((e) => e.number === episode) ??
+      episodes.find((e) => Math.abs(e.number - episode) < 0.6);
+    if (!ep) return sources;
+
+    // Dub
+    const dub = await awGetSources(ep.episodeId, "hd-1", "dub");
+    if (dub?.sources?.length) {
+      dub.sources.forEach((s, i) =>
+        sources.push({
+          label: s.quality ? `DUB ${s.quality}` : i === 0 ? "DUB HD" : `DUB ${i + 1}`,
+          url: s.url,
+          type: s.isM3U8 ? "hls" : "mp4",
+          priority: 50 + i,
+          dubbed: true,
+          headers: dub.headers,
+          tracks: dub.tracks as VideoSource["tracks"],
+        })
+      );
+    }
+
+    // Sub
+    const sub = await awGetSources(ep.episodeId, "hd-1", "sub");
+    if (sub?.sources?.length) {
+      sub.sources.forEach((s, i) =>
+        sources.push({
+          label: s.quality ? `SUB ${s.quality}` : i === 0 ? "SUB HD" : `SUB ${i + 1}`,
+          url: s.url,
+          type: s.isM3U8 ? "hls" : "mp4",
+          priority: 100 + i,
+          dubbed: false,
+          headers: sub.headers,
+          tracks: sub.tracks as VideoSource["tracks"],
+        })
+      );
+    }
+  } catch (e) {
+    console.warn("[resolver] AllAnime failed:", e);
+  }
+  return sources;
+}
+
+// ─── AnimePahe ────────────────────────────────────────────────────────────────
+
+async function resolveAnimePahe(
+  titles: string[],
+  episode: number
+): Promise<VideoSource[]> {
+  const sources: VideoSource[] = [];
+  try {
+    let session: string | null = null;
+    for (const t of titles) {
+      session = await paheFindSession(t);
+      if (session) break;
+    }
+    if (!session) return sources;
+
+    const allEps = await paheGetAllEpisodes(session);
+    const ep =
+      allEps.find((e) => e.episode === episode) ??
+      allEps.find((e) => Math.abs(e.episode - episode) < 0.6);
+    if (!ep) return sources;
+
+    const streams = await paheGetStreams(session, ep.session);
+    if (!streams.length) return sources;
+
+    // Sort: prefer HD, then dub, then sub
+    const sorted = [...streams].sort((a, b) => {
+      if (b.hd !== a.hd) return Number(b.hd) - Number(a.hd);
+      // eng (dub) first within same quality
+      if (a.audio !== b.audio) return a.audio === "eng" ? -1 : 1;
+      return 0;
+    });
+
+    // Extract m3u8 from each Kwik URL (run in parallel, cap at 3)
+    const toProcess = sorted.slice(0, 3);
+    const results = await Promise.allSettled(
+      toProcess.map((s) => extractKwikM3u8(s.kwik))
+    );
+
+    results.forEach((r, i) => {
+      if (r.status !== "fulfilled" || !r.value) return;
+      const s = toProcess[i];
+      const isDub = s.audio === "eng";
+      const quality = s.hd === "1" ? "1080p" : "720p";
+
+      sources.push({
+        label: `Pahe ${isDub ? "DUB" : "SUB"} ${quality}`,
+        url: r.value,
+        type: "hls",
+        priority: isDub ? 150 + i : 200 + i,
+        dubbed: isDub,
+        headers: { Referer: "https://kwik.si/", Origin: "https://kwik.si" },
+      });
+    });
+  } catch (e) {
+    console.warn("[resolver] AnimePahe failed:", e);
+  }
+  return sources;
+}
+
+// ─── Main resolver ────────────────────────────────────────────────────────────
+
 /**
  * Resolve video sources for an AniList anime ID + episode number.
  *
- * Order:
- *  1. Admin-uploaded dubbed files in DB (HostMapping)
- *  2. AllAnime dubbed HLS streams
- *  3. AllAnime subbed HLS streams
+ * Priority order:
+ *   1. Admin-uploaded dubbed files (DB HostMapping)       → priority  1–7
+ *   2. AllAnime dubbed HLS                                → priority 50+
+ *   3. AllAnime subbed HLS                                → priority 100+
+ *   4. AnimePahe dubbed HLS (Kwik)                        → priority 150+
+ *   5. AnimePahe subbed HLS (Kwik)                        → priority 200+
  */
 export async function resolveVideoSources(
   anilistId: string,
@@ -68,94 +186,29 @@ export async function resolveVideoSources(
   titlesInput?: string | string[],
   malId?: number | null
 ): Promise<VideoSource[]> {
-  const sources: VideoSource[] = [];
-
-  // ── 1. DB dubbed overrides ────────────────────────────────────────────────
+  // 1. DB overrides
   const dbSources = await getDbMappings(anilistId, episode);
-  if (dbSources.length > 0) {
-    // Have manually uploaded dubbed content — return immediately, no API needed
-    return dbSources;
+  if (dbSources.length > 0) return dbSources;
+
+  // Build title list for API searches
+  const raw = Array.isArray(titlesInput) ? titlesInput : titlesInput ? [titlesInput] : [];
+  const titles = Array.from(new Set(raw.flatMap((t) => [t, sanitizeTitle(t)]))).filter(Boolean);
+
+  if (titles.length === 0) {
+    console.warn(`[resolver] No titles provided for anilistId=${anilistId}`);
+    return [];
   }
 
-  // ── 2. AllAnime streaming API ─────────────────────────────────────────────
-  try {
-    const rawTitles = Array.isArray(titlesInput)
-      ? titlesInput
-      : titlesInput
-      ? [titlesInput]
-      : [];
+  // 2 & 3. AllAnime + AnimePahe — run in parallel
+  const [allAnimeSources, paheSources] = await Promise.allSettled([
+    resolveAllAnime(titles, malId, episode),
+    resolveAnimePahe(titles, episode),
+  ]);
 
-    // Build deduplicated search queries including sanitized variants
-    const queries = Array.from(
-      new Set(rawTitles.flatMap((t) => [t, sanitizeTitle(t)]))
-    ).filter(Boolean);
-
-    if (queries.length === 0) {
-      console.warn(`[resolver] No title provided for anilistId=${anilistId}`);
-      return sources;
-    }
-
-    // Try each title variant until AllAnime returns a match
-    let showId: string | null = null;
-    for (const q of queries) {
-      showId = await findAniwatchId(malId ?? null, q);
-      if (showId) break;
-    }
-
-    if (!showId) {
-      console.warn(`[resolver] No AllAnime match for: ${queries.join(" | ")}`);
-      return sources;
-    }
-
-    // Fetch episode list
-    const episodes = await awGetEpisodes(showId);
-    // Try exact match first, then nearest (handles 0.5 episode numbers)
-    const epEntry =
-      episodes.find((e) => e.number === episode) ??
-      episodes.find((e) => Math.abs(e.number - episode) < 0.6);
-
-    if (!epEntry) {
-      console.warn(
-        `[resolver] Episode ${episode} not in AllAnime list for show ${showId}. ` +
-        `Available: ${episodes.map((e) => e.number).join(", ")}`
-      );
-      return sources;
-    }
-
-    // Dub stream — AllAnime returns all quality variants in one response
-    const dubResult = await awGetSources(epEntry.episodeId, "hd-1", "dub");
-    if (dubResult?.sources?.length) {
-      dubResult.sources.forEach((s, i) => {
-        sources.push({
-          label: s.quality ? `DUB ${s.quality}` : i === 0 ? "DUB HD" : `DUB ${i + 1}`,
-          url: s.url,
-          type: s.isM3U8 ? "hls" : "mp4",
-          priority: 50 + i,
-          dubbed: true,
-          headers: dubResult.headers,
-          tracks: dubResult.tracks as VideoSource["tracks"],
-        });
-      });
-    }
-
-    // Sub stream
-    const subResult = await awGetSources(epEntry.episodeId, "hd-1", "sub");
-    if (subResult?.sources?.length) {
-      subResult.sources.forEach((s, i) => {
-        sources.push({
-          label: s.quality ? `SUB ${s.quality}` : i === 0 ? "SUB HD" : `SUB ${i + 1}`,
-          url: s.url,
-          type: s.isM3U8 ? "hls" : "mp4",
-          priority: 100 + i,
-          dubbed: false,
-          headers: subResult.headers,
-          tracks: subResult.tracks as VideoSource["tracks"],
-        });
-      });
-    }
-  } catch (e) {
-    console.warn("[resolver] AllAnime failed:", e);
-  }
+  const sources: VideoSource[] = [
+    ...(allAnimeSources.status === "fulfilled" ? allAnimeSources.value : []),
+    ...(paheSources.status === "fulfilled" ? paheSources.value : []),
+  ];
 
   return sources.sort((a, b) => a.priority - b.priority);
 }
