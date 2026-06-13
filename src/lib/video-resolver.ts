@@ -4,6 +4,7 @@ import {
   paheGetAllEpisodes,
   paheGetStreams,
   extractKwikM3u8,
+  kwikEmbedToIframe,
 } from "@/lib/animepahe";
 
 export interface VideoSource {
@@ -142,25 +143,39 @@ async function resolveAnimePahe(
     });
 
     // Extract m3u8 from each Kwik URL (run in parallel, cap at 3)
-    const toProcess = sorted.slice(0, 3);
+    const toProcess = sorted.slice(0, 4);
     const results = await Promise.allSettled(
       toProcess.map((s) => extractKwikM3u8(s.kwik))
     );
 
     results.forEach((r, i) => {
-      if (r.status !== "fulfilled" || !r.value) return;
       const s = toProcess[i];
       const isDub = s.audio === "eng";
       const quality = s.hd === "1" ? "1080p" : "720p";
+      const basePriority = isDub ? 150 : 200;
 
-      sources.push({
-        label: `Pahe ${isDub ? "DUB" : "SUB"} ${quality}`,
-        url: r.value,
-        type: "hls",
-        priority: isDub ? 150 + i : 200 + i,
-        dubbed: isDub,
-        headers: { Referer: "https://kwik.si/", Origin: "https://kwik.si" },
-      });
+      const m3u8 = r.status === "fulfilled" ? r.value : null;
+
+      if (m3u8) {
+        // Best case: extracted real HLS m3u8
+        sources.push({
+          label: `Pahe ${isDub ? "DUB" : "SUB"} ${quality}`,
+          url: m3u8,
+          type: "hls",
+          priority: basePriority + i,
+          dubbed: isDub,
+          headers: { Referer: "https://kwik.si/", Origin: "https://kwik.si" },
+        });
+      } else if (s.kwik) {
+        // Fallback: embed Kwik player as iframe
+        sources.push({
+          label: `Pahe ${isDub ? "DUB" : "SUB"} ${quality} (embed)`,
+          url: kwikEmbedToIframe(s.kwik),
+          type: "iframe",
+          priority: basePriority + i + 10,
+          dubbed: isDub,
+        });
+      }
     });
   } catch (e) {
     console.warn("[resolver] AnimePahe failed:", e);

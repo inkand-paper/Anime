@@ -237,3 +237,16 @@ export async function paheFindSession(title: string): Promise<string | null> {
   );
   return (exact ?? results[0]).session;
 }
+
+
+// ─── Kwik passthrough embed URL ───────────────────────────────────────────────
+/**
+ * Alternative: instead of extracting the m3u8, we can proxy the Kwik embed
+ * page itself as an iframe. This is more reliable when extraction fails.
+ * Used as iframe-type source in the resolver when extractKwikM3u8 returns null.
+ */
+export function kwikEmbedToIframe(kwikUrl: string): string {
+  // Kwik URLs look like: https://kwik.si/e/AbCdEfGh
+  // The embed page handles its own player — we can iframe it directly
+  return kwikUrl;
+}
