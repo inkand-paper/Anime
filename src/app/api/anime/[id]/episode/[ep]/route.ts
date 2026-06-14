@@ -2,15 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAnimeById } from "@/lib/anilist";
 import { resolveVideoSources } from "@/lib/video-resolver";
 
-/**
- * GET /api/anime/[id]/episode/[ep]
- *
- * id  = AniList numeric ID (e.g. 21)
- * ep  = episode number (e.g. 1)
- *
- * Returns { sources: VideoSource[] } sorted by priority.
- * AllAnime and AnimePahe are queried in parallel.
- */
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string; ep: string }> }
@@ -19,55 +10,50 @@ export async function GET(
   const episode = parseInt(ep, 10);
 
   if (isNaN(episode) || episode < 1) {
-    return NextResponse.json(
-      { error: "Invalid episode number", sources: [] },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: "Invalid episode number", sources: [] }, { status: 400 });
   }
 
-  // Fetch AniList metadata to get all title variants for better matching
-  const titleVariants: string[] = [];
+  // Get all title variants from AniList for better API matching
+  const titles: string[] = [];
   let malId: number | null = null;
 
   try {
-    const numericId = parseInt(id, 10);
-    if (!isNaN(numericId)) {
-      const anime = await getAnimeById(numericId);
+    const numId = parseInt(id, 10);
+    if (!isNaN(numId)) {
+      const anime = await getAnimeById(numId);
       if (anime) {
         malId = anime.idMal;
-        // Add all non-null title variants — more options = better API matching
-        const t = anime.title;
-        if (t.romaji)  titleVariants.push(t.romaji);
-        if (t.english) titleVariants.push(t.english);
-        if (t.native)  titleVariants.push(t.native);
+        if (anime.title.romaji)  titles.push(anime.title.romaji);
+        if (anime.title.english) titles.push(anime.title.english);
+        // Don't add native (Japanese) — breaks Latin-script search APIs
       }
     }
   } catch (e) {
     console.warn(`[episode-route] AniList lookup failed for id=${id}:`, e);
   }
 
-  // Deduplicate while preserving order
-  const titles = Array.from(new Set(titleVariants.filter(Boolean)));
-
-  if (titles.length === 0) {
+  if (!titles.length) {
     return NextResponse.json(
-      { error: "Could not find anime metadata", sources: [] },
+      { error: "Could not resolve anime titles from AniList", sources: [] },
       { status: 404 }
     );
   }
 
+  console.log(`[episode-route] Resolving: AniList=${id}, Ep=${episode}, Titles: ${titles.join(" | ")}`);
+
   const sources = await resolveVideoSources(id, episode, titles, malId);
 
-  if (sources.length === 0) {
+  if (!sources.length) {
     return NextResponse.json(
       {
-        error: `No stream found for episode ${episode}. ` +
-               `Tried AllAnime + AnimePahe with titles: ${titles.join(", ")}`,
+        error: `No stream found. Tried HiAnime + AnimePahe with: ${titles.join(", ")}`,
+        hint: "Make sure ANIWATCH_API_URL is set in .env.local. Self-host aniwatch-api on Railway (free).",
         sources: [],
       },
       { status: 404 }
     );
   }
 
+  console.log(`[episode-route] Found ${sources.length} sources: ${sources.map(s => s.label).join(", ")}`);
   return NextResponse.json({ sources });
 }

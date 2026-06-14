@@ -84,7 +84,7 @@ export default function VideoPlayer({
       const srcReferer =
         src.headers?.Referer ??
         src.headers?.referer ??
-        "https://allanime.day/";
+        "https://hianime.to/";
       const proxyUrl =
         `/api/proxy/video?url=${encodeURIComponent(src.url)}` +
         `&referer=${encodeURIComponent(srcReferer)}`;

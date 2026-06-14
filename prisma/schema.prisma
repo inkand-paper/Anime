@@ -16,7 +16,7 @@ model User {
   emailVerified DateTime?
   password      String?
   image         String?
-  role          String    @default("USER") // USER | PREMIUM | ADMIN
+  role          String    @default("USER")
   referralCode  String    @unique @default(cuid())
   referredById  String?
 
@@ -86,38 +86,28 @@ model Profile {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
-model PasswordResetToken {
-  id      String   @id @default(cuid())
-  email   String
-  token   String   @unique
-  expires DateTime
-
-  @@unique([email, token])
-}
-
 // ─── Subscription ────────────────────────────────────────────────────────────
 
 model Subscription {
-  id          String    @id @default(cuid())
-  userId      String    @unique
-  plan        String    @default("FREE") // FREE | MONTHLY | YEARLY
-  status      String    @default("INACTIVE") // INACTIVE | ACTIVE | PAST_DUE | CANCELLED
-  externalId  String?   @unique
-  startDate   DateTime  @default(now())
-  endDate     DateTime?
-  cancelledAt DateTime?
+  id         String    @id @default(cuid())
+  userId     String    @unique
+  plan       String    @default("FREE")
+  status     String    @default("INACTIVE")
+  externalId String?   @unique
+  startDate  DateTime  @default(now())
+  endDate    DateTime?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([status])
 }
 
-// ─── Watchlist & Rooms ───────────────────────────────────────────────────────
+// ─── Watchlist ────────────────────────────────────────────────────────────────
 
 model WatchlistItem {
   id      String   @id @default(cuid())
   userId  String
-  animeId String   // AniList ID (integer as string)
+  animeId String
   addedAt DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -125,6 +115,8 @@ model WatchlistItem {
   @@unique([userId, animeId])
   @@index([userId])
 }
+
+// ─── Watch Together ───────────────────────────────────────────────────────────
 
 model WatchRoom {
   id         String   @id @default(cuid())
@@ -156,15 +148,15 @@ model WatchRoomMember {
   @@index([roomId])
 }
 
-// ─── Host Mapping (dubbed video storage) ────────────────────────────────────
+// ─── Host Mapping (dubbed video uploads) ─────────────────────────────────────
 
 model HostMapping {
   id        String   @id @default(cuid())
-  animeId   String   // AniList ID
+  animeId   String
   episode   Int
-  host      String   // DOODSTREAM | VOE | FILEMOON | STREAMWISH | STREAMTAPE | MIXDROP | MEGASTREAM
+  host      String
   embedUrl  String
-  embedType String   @default("iframe") // iframe | hls | mp4
+  embedType String   @default("iframe")
   dubbed    Boolean  @default(true)
   verified  Boolean  @default(false)
   createdAt DateTime @default(now())
@@ -174,7 +166,7 @@ model HostMapping {
   @@index([animeId, episode])
 }
 
-// ─── Rate Limiting ───────────────────────────────────────────────────────────
+// ─── Rate Limiting ────────────────────────────────────────────────────────────
 
 model RateLimit {
   id      String   @id @default(cuid())
@@ -183,5 +175,4 @@ model RateLimit {
   resetAt DateTime
 
   @@index([key])
-  @@index([resetAt])
 }

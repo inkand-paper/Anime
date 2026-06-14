@@ -10,7 +10,7 @@ const cspHeader = [
   `font-src ${SELF} https://fonts.gstatic.com`,
   `img-src ${SELF} data: blob: https:`,
   `media-src ${SELF} blob: https:`,
-  `frame-src ${SELF} https://kwik.si https://kwik.cx https://kwik.pw https://animepahe.ru https://dood.re https://voe.sx https://filemoon.sx https://streamwish.to https://streamtape.com https://mixdrop.ag https://megastream.cc https://www.paypal.com https://pay.google.com`,
+  `frame-src ${SELF} https://megacloud.tv https://rapid-cloud.co https://rabbitstream.net https://hianime.to https://aniwatch.to https://kwik.si https://kwik.cx https://kwik.pw https://animepahe.ru https://dood.re https://voe.sx https://filemoon.sx https://streamwish.to https://streamtape.com https://mixdrop.ag https://megastream.cc https://www.paypal.com https://pay.google.com`,
   `connect-src ${SELF} https:`,
   `worker-src ${SELF} blob:`,
   `object-src ${NONE}`,

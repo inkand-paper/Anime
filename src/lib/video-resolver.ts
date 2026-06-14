@@ -21,17 +21,41 @@ export const DUBBED_HOSTS = [
   "DOODSTREAM", "VOE", "FILEMOON", "STREAMWISH",
   "STREAMTAPE", "MIXDROP", "MEGASTREAM",
 ] as const;
-
 export type DubbedHost = (typeof DUBBED_HOSTS)[number];
 
-function sanitizeTitle(t: string): string {
-  return t
-    .replace(/(\d+)(?:st|nd|rd|th) Season/gi, (_, n) => `Season ${n}`)
-    .replace(/\s+/g, " ")
-    .trim();
+// ─── Title normalisation ──────────────────────────────────────────────────────
+
+/**
+ * Build a comprehensive list of title variants to try across APIs.
+ * More variants = higher chance of matching despite different romanisations.
+ */
+function buildTitleVariants(titles: string[]): string[] {
+  const variants = new Set<string>();
+
+  for (const t of titles) {
+    if (!t) continue;
+    variants.add(t);
+
+    // "4th Season" → "Season 4"
+    const cleaned = t
+      .replace(/(\d+)(?:st|nd|rd|th) Season/gi, (_, n) => `Season ${n}`)
+      .replace(/\bSeason (\d+)\b/gi, "Season $1")
+      .trim();
+    variants.add(cleaned);
+
+    // Strip season/part suffixes for base title search
+    const base = cleaned
+      .replace(/\s*(?:Season|Part|Cour)\s*\d+/gi, "")
+      .replace(/\s*\d+(?:st|nd|rd|th)\s*(?:Season|Part|Cour)/gi, "")
+      .trim();
+    if (base && base !== cleaned) variants.add(base);
+  }
+
+  return [...variants].filter(Boolean);
 }
 
-/** Lazy DB import — skips cleanly if prisma generate hasn't been run */
+// ─── DB overrides ─────────────────────────────────────────────────────────────
+
 async function getDbMappings(animeId: string, episode: number): Promise<VideoSource[]> {
   try {
     const { prisma } = await import("@/lib/prisma");
@@ -51,62 +75,69 @@ async function getDbMappings(animeId: string, episode: number): Promise<VideoSou
   }
 }
 
-// ─── AllAnime ─────────────────────────────────────────────────────────────────
+// ─── HiAnime (aniwatch-api) ───────────────────────────────────────────────────
 
-async function resolveAllAnime(
+async function resolveHiAnime(
   titles: string[],
   malId: number | null | undefined,
   episode: number
 ): Promise<VideoSource[]> {
   const sources: VideoSource[] = [];
+
   try {
     let showId: string | null = null;
     for (const q of titles) {
       showId = await findAniwatchId(malId ?? null, q);
-      if (showId) break;
+      if (showId) {
+        console.log(`[hianime] Matched "${q}" → ${showId}`);
+        break;
+      }
     }
-    if (!showId) return sources;
+    if (!showId) {
+      console.warn(`[hianime] No match for: ${titles.slice(0, 3).join(" | ")}`);
+      return sources;
+    }
 
     const episodes = await awGetEpisodes(showId);
     const ep =
       episodes.find((e) => e.number === episode) ??
       episodes.find((e) => Math.abs(e.number - episode) < 0.6);
-    if (!ep) return sources;
 
-    // Dub
-    const dub = await awGetSources(ep.episodeId, "hd-1", "dub");
-    if (dub?.sources?.length) {
-      dub.sources.forEach((s, i) =>
-        sources.push({
-          label: s.quality ? `DUB ${s.quality}` : i === 0 ? "DUB HD" : `DUB ${i + 1}`,
-          url: s.url,
-          type: s.isM3U8 ? "hls" : "mp4",
-          priority: 50 + i,
-          dubbed: true,
-          headers: dub.headers,
-          tracks: dub.tracks as VideoSource["tracks"],
-        })
-      );
+    if (!ep) {
+      console.warn(`[hianime] Ep ${episode} not found. Available: ${episodes.slice(0,5).map(e=>e.number).join(",")}`);
+      return sources;
     }
 
-    // Sub
-    const sub = await awGetSources(ep.episodeId, "hd-1", "sub");
-    if (sub?.sources?.length) {
-      sub.sources.forEach((s, i) =>
-        sources.push({
-          label: s.quality ? `SUB ${s.quality}` : i === 0 ? "SUB HD" : `SUB ${i + 1}`,
-          url: s.url,
-          type: s.isM3U8 ? "hls" : "mp4",
-          priority: 100 + i,
-          dubbed: false,
-          headers: sub.headers,
-          tracks: sub.tracks as VideoSource["tracks"],
-        })
-      );
+    // Try dub first, then sub
+    for (const category of ["dub", "sub"] as const) {
+      for (const server of ["hd-1", "hd-2"] as const) {
+        const result = await awGetSources(ep.episodeId, server, category);
+        if (!result?.sources?.length) continue;
+
+        const isDub = category === "dub";
+        result.sources.forEach((s, i) => {
+          sources.push({
+            label: s.quality
+              ? `${isDub ? "DUB" : "SUB"} ${s.quality}`
+              : `${isDub ? "DUB" : "SUB"} ${server.toUpperCase()}${i > 0 ? ` ${i + 1}` : ""}`,
+            url: s.url,
+            type: s.isM3U8 ? "hls" : "mp4",
+            priority: isDub
+              ? (server === "hd-1" ? 50 : 60) + i
+              : (server === "hd-1" ? 100 : 110) + i,
+            dubbed: isDub,
+            headers: result.headers,
+            tracks: result.tracks,
+          });
+        });
+        // Got sources for this category+server — move to next category
+        break;
+      }
     }
   } catch (e) {
-    console.warn("[resolver] AllAnime failed:", e);
+    console.warn("[hianime] Failed:", e);
   }
+
   return sources;
 }
 
@@ -117,112 +148,112 @@ async function resolveAnimePahe(
   episode: number
 ): Promise<VideoSource[]> {
   const sources: VideoSource[] = [];
+
   try {
     let session: string | null = null;
     for (const t of titles) {
       session = await paheFindSession(t);
-      if (session) break;
+      if (session) {
+        console.log(`[animepahe] Matched "${t}" → ${session}`);
+        break;
+      }
     }
-    if (!session) return sources;
+    if (!session) {
+      console.warn(`[animepahe] No match for: ${titles.slice(0, 3).join(" | ")}`);
+      return sources;
+    }
 
     const allEps = await paheGetAllEpisodes(session);
     const ep =
       allEps.find((e) => e.episode === episode) ??
       allEps.find((e) => Math.abs(e.episode - episode) < 0.6);
-    if (!ep) return sources;
+
+    if (!ep) {
+      console.warn(`[animepahe] Ep ${episode} not found. Has ${allEps.length} eps.`);
+      return sources;
+    }
 
     const streams = await paheGetStreams(session, ep.session);
     if (!streams.length) return sources;
 
-    // Sort: prefer HD, then dub, then sub
+    // HD first, then dub over sub within same quality
     const sorted = [...streams].sort((a, b) => {
       if (b.hd !== a.hd) return Number(b.hd) - Number(a.hd);
-      // eng (dub) first within same quality
-      if (a.audio !== b.audio) return a.audio === "eng" ? -1 : 1;
-      return 0;
+      return a.audio === "eng" ? -1 : 1;
     });
 
-    // Extract m3u8 from each Kwik URL (run in parallel, cap at 3)
     const toProcess = sorted.slice(0, 4);
-    const results = await Promise.allSettled(
+    const m3u8Results = await Promise.allSettled(
       toProcess.map((s) => extractKwikM3u8(s.kwik))
     );
 
-    results.forEach((r, i) => {
+    m3u8Results.forEach((r, i) => {
       const s = toProcess[i];
       const isDub = s.audio === "eng";
       const quality = s.hd === "1" ? "1080p" : "720p";
-      const basePriority = isDub ? 150 : 200;
+      const base = isDub ? 150 : 200;
 
       const m3u8 = r.status === "fulfilled" ? r.value : null;
 
       if (m3u8) {
-        // Best case: extracted real HLS m3u8
         sources.push({
           label: `Pahe ${isDub ? "DUB" : "SUB"} ${quality}`,
           url: m3u8,
           type: "hls",
-          priority: basePriority + i,
+          priority: base + i,
           dubbed: isDub,
           headers: { Referer: "https://kwik.si/", Origin: "https://kwik.si" },
         });
       } else if (s.kwik) {
-        // Fallback: embed Kwik player as iframe
+        // Embed Kwik player directly as iframe fallback
         sources.push({
-          label: `Pahe ${isDub ? "DUB" : "SUB"} ${quality} (embed)`,
+          label: `Pahe ${isDub ? "DUB" : "SUB"} ${quality}`,
           url: kwikEmbedToIframe(s.kwik),
           type: "iframe",
-          priority: basePriority + i + 10,
+          priority: base + i + 10,
           dubbed: isDub,
         });
       }
     });
   } catch (e) {
-    console.warn("[resolver] AnimePahe failed:", e);
+    console.warn("[animepahe] Failed:", e);
   }
+
   return sources;
 }
 
 // ─── Main resolver ────────────────────────────────────────────────────────────
 
-/**
- * Resolve video sources for an AniList anime ID + episode number.
- *
- * Priority order:
- *   1. Admin-uploaded dubbed files (DB HostMapping)       → priority  1–7
- *   2. AllAnime dubbed HLS                                → priority 50+
- *   3. AllAnime subbed HLS                                → priority 100+
- *   4. AnimePahe dubbed HLS (Kwik)                        → priority 150+
- *   5. AnimePahe subbed HLS (Kwik)                        → priority 200+
- */
 export async function resolveVideoSources(
   anilistId: string,
   episode: number,
   titlesInput?: string | string[],
   malId?: number | null
 ): Promise<VideoSource[]> {
-  // 1. DB overrides
+  // 1. Admin-uploaded dubbed files always win
   const dbSources = await getDbMappings(anilistId, episode);
   if (dbSources.length > 0) return dbSources;
 
-  // Build title list for API searches
-  const raw = Array.isArray(titlesInput) ? titlesInput : titlesInput ? [titlesInput] : [];
-  const titles = Array.from(new Set(raw.flatMap((t) => [t, sanitizeTitle(t)]))).filter(Boolean);
+  // 2. Build title variants
+  const raw = Array.isArray(titlesInput)
+    ? titlesInput
+    : titlesInput ? [titlesInput] : [];
+  const titles = buildTitleVariants(raw);
 
-  if (titles.length === 0) {
-    console.warn(`[resolver] No titles provided for anilistId=${anilistId}`);
+  if (!titles.length) {
+    console.warn(`[resolver] No titles for anilistId=${anilistId}`);
     return [];
   }
 
-  // 2 & 3. AllAnime + AnimePahe — run in parallel
-  const [allAnimeSources, paheSources] = await Promise.allSettled([
-    resolveAllAnime(titles, malId, episode),
+  // 3. HiAnime + AnimePahe in parallel
+  const [hiResults, paheResults] = await Promise.allSettled([
+    resolveHiAnime(titles, malId, episode),
     resolveAnimePahe(titles, episode),
   ]);
 
   const sources: VideoSource[] = [
-    ...(allAnimeSources.status === "fulfilled" ? allAnimeSources.value : []),
-    ...(paheSources.status === "fulfilled" ? paheSources.value : []),
+    ...(hiResults.status === "fulfilled" ? hiResults.value : []),
+    ...(paheResults.status === "fulfilled" ? paheResults.value : []),
   ];
 
   return sources.sort((a, b) => a.priority - b.priority);
