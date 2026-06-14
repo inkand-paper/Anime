@@ -14,7 +14,8 @@
     "db:studio": "prisma studio",
     "db:seed": "tsx prisma/seed.ts",
     "postinstall": "prisma generate",
-    "setup": "prisma generate && prisma db push"
+    "setup": "node scripts/setup-env.mjs && prisma db push",
+    "setup:env": "node scripts/setup-env.mjs"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.2",
